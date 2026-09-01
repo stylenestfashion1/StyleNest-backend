@@ -1,0 +1,72 @@
+package com.stylenest.stylenest_backend.mapper;
+
+import java.util.List;
+
+import org.springframework.stereotype.Component;
+
+import com.stylenest.stylenest_backend.dto.product.ProductRequest;
+import com.stylenest.stylenest_backend.dto.product.ProductResponse;
+import com.stylenest.stylenest_backend.entity.Product;
+import com.stylenest.stylenest_backend.service.ProductSearchMeta;
+
+@Component
+public class ProductMapper {
+
+    public Product toEntity(ProductRequest request) {
+
+        return Product.builder()
+                .name(request.getName())
+                .shortDescription(request.getShortDescription())
+                .description(request.getDescription())
+                .price(request.getPrice())
+                .discountPrice(request.getDiscountPrice())
+                .fabric(request.getFabric())
+                .careInstructions(request.getCareInstructions())
+                .featured(request.getFeatured())
+                .trending(request.getTrending())
+                .active(request.getActive())
+                .build();
+    }
+
+    public ProductResponse toResponse(Product product) {
+        return toResponse(product, ProductSearchMeta.EMPTY);
+    }
+
+    public ProductResponse toResponse(Product product, ProductSearchMeta meta) {
+
+        return ProductResponse.builder()
+                .id(product.getId())
+                .name(product.getName())
+                .slug(product.getSlug())
+                .shortDescription(product.getShortDescription())
+                .description(product.getDescription())
+                .price(product.getPrice())
+                .discountPrice(product.getDiscountPrice())
+                .fabric(product.getFabric())
+                .careInstructions(product.getCareInstructions())
+                .featured(product.getFeatured())
+                .trending(product.getTrending())
+                .active(product.getActive())
+                .thumbnailUrl(meta.thumbnailUrl())
+                .availableColors(meta.availableColors())
+                .categoryName(product.getCategory().getName())
+                .gender(product.getCategory().getGender())
+                .createdAt(product.getCreatedAt())
+                .updatedAt(product.getUpdatedAt())
+                .build();
+    }
+
+    public void updateEntity(Product product, ProductRequest request) {
+
+        product.setName(request.getName());
+        product.setShortDescription(request.getShortDescription());
+        product.setDescription(request.getDescription());
+        product.setPrice(request.getPrice());
+        product.setDiscountPrice(request.getDiscountPrice());
+        product.setFabric(request.getFabric());
+        product.setCareInstructions(request.getCareInstructions());
+        product.setFeatured(request.getFeatured());
+        product.setTrending(request.getTrending());
+        product.setActive(request.getActive());
+    }
+}

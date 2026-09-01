@@ -1,0 +1,155 @@
+package com.stylenest.stylenest_backend.controller;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import com.stylenest.stylenest_backend.dto.product.ProductRequest;
+import com.stylenest.stylenest_backend.dto.product.ProductResponse;
+import com.stylenest.stylenest_backend.dto.product.filter.ProductFilterRequest;
+import com.stylenest.stylenest_backend.enums.Gender;
+import com.stylenest.stylenest_backend.response.ApiResponse;
+import com.stylenest.stylenest_backend.service.ProductService;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+
+@RestController
+@RequestMapping("/api/products")
+@RequiredArgsConstructor
+public class ProductController {
+
+    private final ProductService productService;
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<ProductResponse>> createProduct(
+            @Valid @RequestBody ProductRequest request) {
+
+        ProductResponse response = productService.createProduct(request);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.<ProductResponse>builder()
+                        .success(true)
+                        .message("Product created successfully.")
+                        .data(response)
+                        .build());
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getAllProducts() {
+
+        List<ProductResponse> response = productService.getAllProducts();
+
+        return ResponseEntity.ok(
+                ApiResponse.<List<ProductResponse>>builder()
+                        .success(true)
+                        .message("Products fetched successfully.")
+                        .data(response)
+                        .build());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<ProductResponse>> getProductById(
+            @PathVariable Long id) {
+
+        ProductResponse response = productService.getProductById(id);
+
+        return ResponseEntity.ok(
+                ApiResponse.<ProductResponse>builder()
+                        .success(true)
+                        .message("Product fetched successfully.")
+                        .data(response)
+                        .build());
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<ProductResponse>> updateProduct(
+            @PathVariable Long id,
+            @Valid @RequestBody ProductRequest request) {
+
+        ProductResponse response = productService.updateProduct(id, request);
+
+        return ResponseEntity.ok(
+                ApiResponse.<ProductResponse>builder()
+                        .success(true)
+                        .message("Product updated successfully.")
+                        .data(response)
+                        .build());
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteProduct(
+            @PathVariable Long id) {
+
+        productService.deleteProduct(id);
+
+        return ResponseEntity.ok(
+                ApiResponse.<Void>builder()
+                        .success(true)
+                        .message("Product deleted successfully.")
+                        .data(null)
+                        .build());
+    }
+    
+    @PostMapping("/search")
+    public ResponseEntity<ApiResponse<Page<ProductResponse>>> searchProducts(
+            @RequestBody ProductFilterRequest request) {
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Products fetched successfully",
+                        productService.searchProducts(request)
+                )
+        );
+    }
+
+    // Query-param equivalent of POST /search, e.g.
+    // GET /api/products/filter?gender=MEN&categoryId=3&minPrice=500&maxPrice=2000&search=shirt
+    // Kept separate from the plain GET /api/products above so that
+    // endpoint's existing unfiltered/unpaginated contract never changes.
+    @GetMapping("/filter")
+    public ResponseEntity<ApiResponse<Page<ProductResponse>>> filterProducts(
+            @RequestParam(required = false) Gender gender,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String color,
+            @RequestParam(required = false) String size,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean featured,
+            @RequestParam(required = false) Boolean trending,
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "12") Integer sizePerPage,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String direction) {
+
+        ProductFilterRequest request = ProductFilterRequest.builder()
+                .gender(gender)
+                .categoryId(categoryId)
+                .color(color)
+                .size(size)
+                .minPrice(minPrice)
+                .maxPrice(maxPrice)
+                .keyword(search)
+                .featured(featured)
+                .trending(trending)
+                .active(active)
+                .page(page)
+                .sizePerPage(sizePerPage)
+                .sortBy(sortBy)
+                .direction(direction)
+                .build();
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Products fetched successfully",
+                        productService.searchProducts(request)
+                )
+        );
+    }
+}
