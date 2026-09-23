@@ -39,10 +39,32 @@ public class ProductController {
                         .build());
     }
 
+    // gender/categoryId are optional so this endpoint's old no-arg contract
+    // (return everything) is unchanged for existing callers -- but previously
+    // ANY query param passed here (e.g. ?category=Kurti&gender=WOMEN) was
+    // silently ignored because nothing was bound to it, so a caller filtering
+    // by category would actually get every product back, unfiltered. That
+    // never showed up on the storefront because the frontend calls
+    // /products/filter (see filterProducts below) instead of this endpoint,
+    // but any other caller hitting this one expecting the query to filter
+    // would get the wrong result. Delegates to the same
+    // ProductSpecification-backed search as /filter so both endpoints agree.
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> getAllProducts() {
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getAllProducts(
+            @RequestParam(required = false) Gender gender,
+            @RequestParam(required = false) Long categoryId) {
 
-        List<ProductResponse> response = productService.getAllProducts();
+        List<ProductResponse> response;
+        if (gender != null || categoryId != null) {
+            ProductFilterRequest request = ProductFilterRequest.builder()
+                    .gender(gender)
+                    .categoryId(categoryId)
+                    .sizePerPage(Integer.MAX_VALUE)
+                    .build();
+            response = productService.searchProducts(request).getContent();
+        } else {
+            response = productService.getAllProducts();
+        }
 
         return ResponseEntity.ok(
                 ApiResponse.<List<ProductResponse>>builder()
