@@ -232,6 +232,15 @@ public class PaymentServiceImpl implements PaymentService {
 
         String outcome = order.getPaymentStatus() == PaymentStatus.PAID ? "success" : "failed";
 
+        // A guest has no account to log into, so the authenticated
+        // /orders/{id} page is unreachable for them -- send them to the
+        // public order-tracking page instead, prefilled with their order
+        // number (they still verify with their phone number there, same
+        // access-control gate as every other guest order lookup).
+        if (order.getUser() == null) {
+            return frontendUrl + "/track-order?orderNumber=" + order.getOrderNumber() + "&payment=" + outcome;
+        }
+
         return frontendUrl + "/orders/" + order.getId() + "?payment=" + outcome;
     }
 

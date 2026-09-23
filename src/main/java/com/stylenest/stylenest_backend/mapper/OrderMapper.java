@@ -12,6 +12,7 @@ import com.stylenest.stylenest_backend.dto.order.ShippingAddressSnapshotResponse
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.OrderItem;
 import com.stylenest.stylenest_backend.entity.Shipment;
+import com.stylenest.stylenest_backend.repository.InvoiceRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 public class OrderMapper {
 
     private final ShipmentRepository shipmentRepository;
+    private final InvoiceRepository invoiceRepository;
 
     public OrderResponse toResponse(Order order) {
 
@@ -44,12 +46,18 @@ public class OrderMapper {
                 .createdAt(order.getCreatedAt())
                 .items(items)
                 .isGuest(order.getUser() == null)
+                .email(order.getUser() != null ? order.getUser().getEmail() : order.getGuestEmail())
                 .shippingAddress(toShippingSnapshot(order))
                 .shipmentStatus(shipment == null ? null : shipment.getShipmentStatus())
                 .trackingNumber(shipment == null ? null : shipment.getTrackingNumber())
                 .courierName(shipment == null ? null : shipment.getCourierName())
                 .estimatedDeliveryDate(shipment == null ? null : shipment.getEstimatedDeliveryDate())
-                .invoiceAvailable(true)
+                // Reflects whether an Invoice row actually exists yet (generated
+                // at order finalization -- see OrderServiceImpl.sendConfirmationEmailIfNeeded),
+                // not a hardcoded assumption. An order awaiting online payment,
+                // or one where the confirmation email was never sendable (no
+                // recipient on file), correctly shows false here.
+                .invoiceAvailable(invoiceRepository.existsByRetailOrder(order))
                 .build();
     }
 
@@ -89,7 +97,7 @@ public class OrderMapper {
                 .productId(item.getProductVariant().getProduct().getId())
                 .productVariantId(item.getProductVariant().getId())
                 .productName(item.getProductVariant().getProduct().getName())
-                .color(item.getProductVariant().getColor().name())
+                .color(item.getProductVariant().getColor())
                 .size(item.getProductVariant().getSize().name())
                 .quantity(item.getQuantity())
                 .price(item.getPrice())

@@ -25,7 +25,6 @@ import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductImage;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.Role;
 import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.repository.CategoryRepository;
@@ -38,10 +37,11 @@ import com.stylenest.stylenest_backend.security.JwtService;
 
 /**
  * Full-stack tests mirroring the real "Shoowel" product reported live:
- * variants RED/L, BLACK/M, BLACK/XS, each with its own distinct image, no
- * RED/M and no BLACK/L variant. Covers the combined color+size filter fix
- * (B.1), filter-aware thumbnailUrl (B.2), availableColors (B.3), and
- * wishlist variant-aware images (Part A).
+ * variants RED/L, BLACK/M, BLACK/XS, no RED/M and no BLACK/L variant.
+ * Images are keyed by (product, color) -- BLACK/M and BLACK/XS therefore
+ * share one BLACK image set, RED/L has its own RED image set. Covers the
+ * combined color+size filter fix (B.1), filter-aware thumbnailUrl (B.2),
+ * availableColors (B.3), and wishlist variant-aware images (Part A).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -80,9 +80,8 @@ class ProductSearchAndWishlistVariantIntegrationTest {
     private Long blackMVariantId;
     private Long blackXsVariantId;
 
-    private static final String RED_L_IMAGE = "https://pashtush.in/cdn/shop/products/red-shawl.jpg";
-    private static final String BLACK_M_IMAGE = "https://pashtush.in/cdn/shop/products/pashtush-mens.jpg";
-    private static final String BLACK_XS_IMAGE = "https://i.pinimg.com/736x/black-xs.jpg";
+    private static final String RED_IMAGE = "https://pashtush.in/cdn/shop/products/red-shawl.jpg";
+    private static final String BLACK_IMAGE = "https://pashtush.in/cdn/shop/products/pashtush-mens.jpg";
 
     private String newCustomerToken(String email) {
 
@@ -116,24 +115,24 @@ class ProductSearchAndWishlistVariantIntegrationTest {
         shoowelId = shoowel.getId();
 
         // Insertion order matters for the "no filter" default-resolution
-        // test below: RED/L first, so it's the lowest-id variant.
+        // test below: RED image saved first, so RED is the lowest-order
+        // color when no filter prefers one.
         ProductVariant redL = productVariantRepository.save(
-                ProductVariant.builder().product(shoowel).color(Color.RED).size(Size.L).stock(3).build());
+                ProductVariant.builder().product(shoowel).color("RED").size(Size.L).stock(3).build());
         ProductVariant blackM = productVariantRepository.save(
-                ProductVariant.builder().product(shoowel).color(Color.BLACK).size(Size.M).stock(5).build());
+                ProductVariant.builder().product(shoowel).color("BLACK").size(Size.M).stock(5).build());
         ProductVariant blackXs = productVariantRepository.save(
-                ProductVariant.builder().product(shoowel).color(Color.BLACK).size(Size.XS).stock(3).build());
+                ProductVariant.builder().product(shoowel).color("BLACK").size(Size.XS).stock(3).build());
 
         redLVariantId = redL.getId();
         blackMVariantId = blackM.getId();
         blackXsVariantId = blackXs.getId();
 
+        // One image set per color -- shared by every size of that color.
         productImageRepository.save(
-                ProductImage.builder().variant(redL).imageUrl(RED_L_IMAGE).displayOrder(1).build());
+                ProductImage.builder().product(shoowel).color("RED").imageUrl(RED_IMAGE).displayOrder(1).build());
         productImageRepository.save(
-                ProductImage.builder().variant(blackM).imageUrl(BLACK_M_IMAGE).displayOrder(1).build());
-        productImageRepository.save(
-                ProductImage.builder().variant(blackXs).imageUrl(BLACK_XS_IMAGE).displayOrder(1).build());
+                ProductImage.builder().product(shoowel).color("BLACK").imageUrl(BLACK_IMAGE).displayOrder(1).build());
     }
 
     private String searchPayload(String color, String size) {
@@ -249,16 +248,19 @@ class ProductSearchAndWishlistVariantIntegrationTest {
     }
 
     // ================= B.2: filter-aware thumbnailUrl =================
+    //
+    // Images are keyed by (product, color) now -- size no longer
+    // influences which image is chosen, only color does.
 
     @Test
-    void search_noFilter_thumbnailIsDefaultLowestIdVariant() throws Exception {
+    void search_noFilter_thumbnailIsDefaultLowestColorVariant() throws Exception {
 
         mockMvc.perform(post("/api/products/search")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(searchPayload(null, null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[?(@.id == " + shoowelId + ")].thumbnailUrl")
-                        .value(org.hamcrest.Matchers.contains(RED_L_IMAGE)));
+                        .value(org.hamcrest.Matchers.contains(BLACK_IMAGE)));
     }
 
     @Test
@@ -269,18 +271,21 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                         .content(searchPayload("RED", null)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[?(@.id == " + shoowelId + ")].thumbnailUrl")
-                        .value(org.hamcrest.Matchers.contains(RED_L_IMAGE)));
+                        .value(org.hamcrest.Matchers.contains(RED_IMAGE)));
     }
 
     @Test
-    void search_sizeM_thumbnailIsBlackMVariantImage_theActualMSizeVariant() throws Exception {
+    void search_sizeM_thumbnailIsBlackVariantImage_sizeDoesNotChangeColorImage() throws Exception {
 
+        // BLACK/M and BLACK/XS share the same BLACK image set -- filtering
+        // by size M (which only BLACK has) must still resolve to the
+        // BLACK image, exactly as filtering by size XS would.
         mockMvc.perform(post("/api/products/search")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(searchPayload(null, "M")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[?(@.id == " + shoowelId + ")].thumbnailUrl")
-                        .value(org.hamcrest.Matchers.contains(BLACK_M_IMAGE)));
+                        .value(org.hamcrest.Matchers.contains(BLACK_IMAGE)));
     }
 
     // ================= B.3: availableColors =================
@@ -327,14 +332,14 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + shoowelId + ",\"productVariantId\":" + redLVariantId + "}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.items[0].imageUrl").value(RED_L_IMAGE))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value(RED_IMAGE))
                 .andExpect(jsonPath("$.data.items[0].color").value("RED"))
                 .andExpect(jsonPath("$.data.items[0].size").value("L"))
                 .andExpect(jsonPath("$.data.items[0].productVariantId").value(redLVariantId));
 
         mockMvc.perform(get("/api/wishlist").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].imageUrl").value(RED_L_IMAGE))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value(RED_IMAGE))
                 .andExpect(jsonPath("$.data.items[0].color").value("RED"))
                 .andExpect(jsonPath("$.data.items[0].size").value("L"));
     }
@@ -349,13 +354,13 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + shoowelId + ",\"productVariantId\":" + blackXsVariantId + "}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_XS_IMAGE))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_IMAGE))
                 .andExpect(jsonPath("$.data.items[0].color").value("BLACK"))
                 .andExpect(jsonPath("$.data.items[0].size").value("XS"));
 
         mockMvc.perform(get("/api/wishlist").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_XS_IMAGE));
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_IMAGE));
     }
 
     @Test
@@ -368,7 +373,7 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\":" + shoowelId + "}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.items[0].imageUrl").value(RED_L_IMAGE))
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_IMAGE))
                 .andExpect(jsonPath("$.data.items[0].color").isEmpty())
                 .andExpect(jsonPath("$.data.items[0].size").isEmpty())
                 .andExpect(jsonPath("$.data.items[0].productVariantId").isEmpty());
@@ -397,9 +402,9 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(2))
                 .andExpect(jsonPath("$.data.items[?(@.productVariantId == " + redLVariantId + ")].imageUrl")
-                        .value(org.hamcrest.Matchers.contains(RED_L_IMAGE)))
+                        .value(org.hamcrest.Matchers.contains(RED_IMAGE)))
                 .andExpect(jsonPath("$.data.items[?(@.productVariantId == " + blackMVariantId + ")].imageUrl")
-                        .value(org.hamcrest.Matchers.contains(BLACK_M_IMAGE)));
+                        .value(org.hamcrest.Matchers.contains(BLACK_IMAGE)));
     }
 
     @Test
@@ -470,7 +475,7 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].productVariantId").value(blackMVariantId.intValue()))
-                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_M_IMAGE));
+                .andExpect(jsonPath("$.data.items[0].imageUrl").value(BLACK_IMAGE));
     }
 
     @Test
@@ -515,7 +520,7 @@ class ProductSearchAndWishlistVariantIntegrationTest {
                         .category(otherCategory)
                         .build());
         ProductVariant otherVariant = productVariantRepository.save(
-                ProductVariant.builder().product(otherProduct).color(Color.GREEN).size(Size.S).stock(1).build());
+                ProductVariant.builder().product(otherProduct).color("GREEN").size(Size.S).stock(1).build());
 
         mockMvc.perform(post("/api/wishlist/add")
                         .header("Authorization", "Bearer " + token)

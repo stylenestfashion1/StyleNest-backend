@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -21,6 +22,7 @@ import com.stylenest.stylenest_backend.dto.order.OrderResponse;
 import com.stylenest.stylenest_backend.dto.order.OrderSummaryResponse;
 import com.stylenest.stylenest_backend.entity.Address;
 import com.stylenest.stylenest_backend.entity.Cart;
+import com.stylenest.stylenest_backend.entity.Invoice;
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.OrderItem;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
@@ -45,6 +47,7 @@ import com.stylenest.stylenest_backend.repository.ShipmentHistoryRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
 import com.stylenest.stylenest_backend.repository.UserRepository;
 import com.stylenest.stylenest_backend.service.EmailService;
+import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 import com.stylenest.stylenest_backend.service.OrderService;
 
@@ -64,6 +67,7 @@ public class OrderServiceImpl implements OrderService {
     private final ShipmentHistoryRepository shipmentHistoryRepository;
     private final OrderMapper orderMapper;
     private final InvoiceService invoiceService;
+    private final InvoiceGenerationService invoiceGenerationService;
     private final EmailService emailService;
 
     private User getCurrentUser() {
@@ -212,6 +216,8 @@ public class OrderServiceImpl implements OrderService {
                             + "This endpoint only accepts COD.");
         }
 
+        validateGuestShippingAddress(request.getShippingAddress());
+
         List<ReservationLine> lines = linesFromGuestRequest(request.getItems());
 
         ShippingSnapshot snapshot = ShippingSnapshot.fromGuestRequest(request.getShippingAddress());
@@ -229,6 +235,8 @@ public class OrderServiceImpl implements OrderService {
         if (request.getPaymentMethod() == PaymentMethod.COD) {
             throw new BadRequestException("COD does not go through the payment gateway.");
         }
+
+        validateGuestShippingAddress(request.getShippingAddress());
 
         List<ReservationLine> lines = linesFromGuestRequest(request.getItems());
 
@@ -284,6 +292,30 @@ public class OrderServiceImpl implements OrderService {
                         cartItem.getQuantity(),
                         cartItem.getPrice()))
                 .toList();
+    }
+
+    // Loose but real check: an optional leading "+" country code, then
+    // 5-20 digits -- matches PaymentServiceImpl's own PHONE_PATTERN, since
+    // this same number is what eventually gets sent to Easebuzz for
+    // online payments and must not fail validation there instead.
+    private static final Pattern GUEST_PHONE_PATTERN = Pattern.compile("^(\\+\\d{1,4}[-]?)?\\d{5,20}$");
+
+    private void validateGuestShippingAddress(GuestShippingAddressRequest address) {
+
+        String cleanedPhone = address.getPhone() == null
+                ? ""
+                : address.getPhone().replaceAll("[\\s()-]", "");
+
+        if (!GUEST_PHONE_PATTERN.matcher(cleanedPhone).matches()) {
+            throw new BadRequestException("Please enter a valid phone number.");
+        }
+
+        boolean isIndia = "IN".equalsIgnoreCase(address.getCountryCode())
+                || (address.getCountryCode() == null && "India".equalsIgnoreCase(address.getCountry()));
+
+        if (isIndia && !address.getPostalCode().matches("^[1-9][0-9]{5}$")) {
+            throw new BadRequestException("Please enter a valid 6-digit PIN code.");
+        }
     }
 
     private List<ReservationLine> linesFromGuestRequest(List<GuestOrderItemRequest> items) {
@@ -459,13 +491,14 @@ public class OrderServiceImpl implements OrderService {
 
         try {
 
-            byte[] invoicePdf = invoiceService.generateInvoicePdf(order);
+            Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
+            byte[] invoicePdf = invoiceService.generatePdf(invoice);
 
             List<InvoiceItemResponse> items = order.getOrderItems().stream()
                     .map(item -> InvoiceItemResponse.builder()
                             .productName(item.getProductVariant().getProduct().getName())
-                            .color(item.getProductVariant().getColor().name())
-                            .size(item.getProductVariant().getSize().name())
+                            .color(item.getProductVariant().getColor())
+                            .size(item.getProductVariant().getSize().getLabel())
                             .quantity(item.getQuantity())
                             .price(item.getPrice())
                             .subtotal(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
@@ -479,6 +512,7 @@ public class OrderServiceImpl implements OrderService {
             OrderConfirmationEmailData data = OrderConfirmationEmailData.builder()
                     .customerName(order.getShippingFullName())
                     .orderNumber(order.getOrderNumber())
+                    .invoiceNumber(invoice.getInvoiceNumber())
                     .orderDate(order.getCreatedAt())
                     .items(items)
                     .subtotal(subtotal)
@@ -574,21 +608,19 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public InvoiceResponse getInvoiceView(Long id) {
 
         Order order = getOwnedOrder(id);
 
-        return invoiceService.buildInvoiceView(order);
+        return invoiceService.buildView(invoiceGenerationService.generateForRetailOrder(order));
     }
 
     @Override
-    @Transactional(readOnly = true)
     public byte[] getInvoicePdf(Long id) {
 
         Order order = getOwnedOrder(id);
 
-        return invoiceService.generateInvoicePdf(order);
+        return invoiceService.generatePdf(invoiceGenerationService.generateForRetailOrder(order));
     }
 
     private Order getOwnedOrder(Long id) {

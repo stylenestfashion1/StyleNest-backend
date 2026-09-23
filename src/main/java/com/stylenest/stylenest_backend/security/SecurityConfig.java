@@ -100,12 +100,41 @@ public class SecurityConfig {
                         ).permitAll()
 
                         .requestMatchers(HttpMethod.GET,
-                                "/api/guest/orders/invoice").permitAll()
+                                "/api/guest/orders/invoice",
+                                "/api/guest/orders/invoice/view").permitAll()
 
                         // POSTAL/ZIP CODE LOOKUP (read-only, no PII -- needed
                         // pre-auth so guest checkout can use it too)
                         .requestMatchers(HttpMethod.GET,
                                 "/api/postal-lookup").permitAll()
+
+                        // IN-STORE QR DISCOUNT -- CUSTOMER FLOW. permitAll here
+                        // only because a shop customer scanning the QR is never
+                        // an authenticated User/JWT holder -- the real
+                        // enforcement is inside DiscountOfferService: /verify
+                        // requires the exact permanent QR secret token, and
+                        // /claim requires a valid short-lived session token
+                        // minted by /verify (see DiscountOfferServiceImpl).
+                        // Admin discount endpoints live under /api/admin/discount/**,
+                        // already covered by the hasRole("ADMIN") /api/admin/** rule below.
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/discount/verify",
+                                "/api/discount/claim").permitAll()
+
+                        // BULK ORDERS -- ACCESS GATE (public, rate-limited
+                        // inside BulkTokenServiceImpl)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/bulk/access/validate").permitAll()
+
+                        // BULK ORDERS -- CUSTOMER CATALOG/CHECKOUT. permitAll
+                        // here at the Spring Security layer only because
+                        // bulk customers are never authenticated Users/JWT
+                        // holders -- real enforcement is BulkAccessInterceptor
+                        // (see WebMvcConfig), which re-validates the
+                        // X-Bulk-Token header against the database on every
+                        // single request to this path, independent of the
+                        // frontend ever hiding the link.
+                        .requestMatchers("/api/bulk/customer/**").permitAll()
 
                         // PRODUCTS (PUBLIC)
                         .requestMatchers(HttpMethod.GET,

@@ -10,25 +10,28 @@ import com.stylenest.stylenest_backend.dto.cart.CartResponse;
 import com.stylenest.stylenest_backend.entity.Cart;
 import com.stylenest.stylenest_backend.entity.CartItem;
 import com.stylenest.stylenest_backend.entity.ProductImage;
+import com.stylenest.stylenest_backend.entity.ProductVariant;
+import com.stylenest.stylenest_backend.repository.ProductImageRepository;
+
+import lombok.RequiredArgsConstructor;
 
 @Component
+@RequiredArgsConstructor
 public class CartMapper {
+
+    private final ProductImageRepository imageRepository;
 
     public CartItemResponse toCartItemResponse(CartItem cartItem) {
 
-        String imageUrl = null;
+        ProductVariant variant = cartItem.getProductVariant();
 
-        if (!cartItem.getProductVariant()
-                .getImages()
-                .isEmpty()) {
+        // Images belong to (product, color), shared across every size of
+        // that color -- not owned by this specific size variant.
+        List<ProductImage> images = imageRepository
+                .findByProductIdAndColorOrderByDisplayOrderAsc(
+                        variant.getProduct().getId(), variant.getColor());
 
-            ProductImage image =
-                    cartItem.getProductVariant()
-                            .getImages()
-                            .get(0);
-
-            imageUrl = image.getImageUrl();
-        }
+        String imageUrl = images.isEmpty() ? null : images.get(0).getImageUrl();
 
         BigDecimal subTotal =
                 cartItem.getPrice()
@@ -51,8 +54,7 @@ public class CartMapper {
                                 .getName())
                 .color(
                         cartItem.getProductVariant()
-                                .getColor()
-                                .name())
+                                .getColor())
                 .size(
                         cartItem.getProductVariant()
                                 .getSize()

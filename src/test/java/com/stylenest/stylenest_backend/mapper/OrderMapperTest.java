@@ -19,16 +19,17 @@ import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.Shipment;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.ShipmentStatus;
 import com.stylenest.stylenest_backend.enums.Size;
+import com.stylenest.stylenest_backend.repository.InvoiceRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
 
 class OrderMapperTest {
 
     private final ShipmentRepository shipmentRepository = mock(ShipmentRepository.class);
-    private final OrderMapper orderMapper = new OrderMapper(shipmentRepository);
+    private final InvoiceRepository invoiceRepository = mock(InvoiceRepository.class);
+    private final OrderMapper orderMapper = new OrderMapper(shipmentRepository, invoiceRepository);
 
     @BeforeEach
     void setUp() {
@@ -43,7 +44,7 @@ class OrderMapperTest {
         ProductVariant variant = ProductVariant.builder()
                 .id(7L)
                 .product(product)
-                .color(Color.BLACK)
+                .color("BLACK")
                 .size(Size.M)
                 .stock(5)
                 .build();

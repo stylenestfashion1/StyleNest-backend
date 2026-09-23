@@ -63,6 +63,28 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void sendInvoiceEmail(
+            String toEmail, String customerName, String invoiceNumber,
+            String orderReference, BigDecimal totalAmount, byte[] invoicePdfBytes) {
+
+        String subject = "StyleNest Fashion - Invoice " + invoiceNumber + " for Order #" + orderReference;
+        String attachmentName = "Invoice-" + invoiceNumber + ".pdf";
+
+        String body = """
+                <h2 style="font-family:Georgia,serif;font-weight:normal;font-size:20px;color:#1a1a1a;margin:0 0 16px 0;">Your Invoice</h2>
+                <p style="font-size:14px;line-height:1.6;color:#4a4a4a;margin:0 0 24px 0;">Hi %s, thank you for your order. Your invoice is attached to this email.</p>
+                <table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+                  <tr><td style="padding:8px 0;color:#9a9488;">Invoice Number</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;">%s</td></tr>
+                  <tr><td style="padding:8px 0;color:#9a9488;">Order Reference</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;">#%s</td></tr>
+                  <tr><td style="padding:8px 0;color:#9a9488;">Total Amount</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;">%s</td></tr>
+                </table>
+                """.formatted(customerName, invoiceNumber, orderReference, currency(totalAmount));
+
+        send(toEmail, subject, emailShell(body), attachmentName, invoicePdfBytes,
+                "invoice", invoiceNumber);
+    }
+
+    @Override
     public void sendWelcomeEmail(String toEmail, String customerName) {
 
         send(toEmail, "Welcome to StyleNest Fashion", buildWelcomeTemplate(customerName), null, null,
@@ -259,6 +281,7 @@ public class EmailServiceImpl implements EmailService {
                 <table style="width:100%%;border-collapse:collapse;margin:0 0 28px 0;">
                   %s
                   <tr><td style="padding:6px 0;font-size:14px;color:#1a1a1a;font-weight:bold;">Total</td><td style="padding:6px 0;text-align:right;font-size:14px;color:#1a1a1a;font-weight:bold;">%s</td></tr>
+                  <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Invoice Number</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
                   <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Payment Method</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
                   <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Payment Status</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
                   <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Order Status</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
@@ -279,6 +302,7 @@ public class EmailServiceImpl implements EmailService {
                 itemRows.toString(),
                 subtotalRow,
                 currency(data.getTotalAmount()),
+                data.getInvoiceNumber() == null ? "-" : data.getInvoiceNumber(),
                 paymentMethodLabel,
                 paymentStatusLabel,
                 data.getOrderStatus() == null ? "" : orderStatusLabel(data.getOrderStatus()),

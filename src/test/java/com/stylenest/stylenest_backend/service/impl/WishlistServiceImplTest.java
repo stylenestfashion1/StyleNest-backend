@@ -27,7 +27,6 @@ import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
 import com.stylenest.stylenest_backend.entity.Wishlist;
 import com.stylenest.stylenest_backend.entity.WishlistItem;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.mapper.WishlistMapper;
@@ -36,8 +35,8 @@ import com.stylenest.stylenest_backend.repository.ProductVariantRepository;
 import com.stylenest.stylenest_backend.repository.UserRepository;
 import com.stylenest.stylenest_backend.repository.WishlistItemRepository;
 import com.stylenest.stylenest_backend.repository.WishlistRepository;
+import com.stylenest.stylenest_backend.repository.projection.ProductColorImageProjection;
 import com.stylenest.stylenest_backend.repository.projection.ProductSearchMetaProjection;
-import com.stylenest.stylenest_backend.repository.projection.VariantImageProjection;
 import com.stylenest.stylenest_backend.service.ProductThumbnailResolver;
 import com.stylenest.stylenest_backend.service.VariantImageResolver;
 
@@ -85,11 +84,16 @@ class WishlistServiceImplTest {
         }
     }
 
-    private record ImageRow(Long variantId, String imageUrl) implements VariantImageProjection {
+    private record ImageRow(Long productId, String color, String imageUrl) implements ProductColorImageProjection {
 
         @Override
-        public Long getVariantId() {
-            return variantId;
+        public Long getProductId() {
+            return productId;
+        }
+
+        @Override
+        public String getColor() {
+            return color;
         }
 
         @Override
@@ -128,7 +132,7 @@ class WishlistServiceImplTest {
         return Product.builder().id(id).name(name).slug(name.toLowerCase()).build();
     }
 
-    private ProductVariant variant(Long id, Product product, Color color, Size size) {
+    private ProductVariant variant(Long id, Product product, String color, Size size) {
         return ProductVariant.builder().id(id).product(product).color(color).size(size).stock(5).build();
     }
 
@@ -142,7 +146,7 @@ class WishlistServiceImplTest {
         wishlist.setWishlistItems(List.of(item));
 
         when(wishlistRepository.findByUser(user)).thenReturn(Optional.of(wishlist));
-        when(productRepository.findProductSearchMetaByProductIds(List.of(1L), null, null))
+        when(productRepository.findProductSearchMetaByProductIds(List.of(1L), null))
                 .thenReturn(List.of(new MetaRow(1L,
                         "https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=800&q=80", "BLACK")));
 
@@ -170,7 +174,7 @@ class WishlistServiceImplTest {
         wishlist.setWishlistItems(List.of(item));
 
         when(wishlistRepository.findByUser(user)).thenReturn(Optional.of(wishlist));
-        when(productRepository.findProductSearchMetaByProductIds(List.of(2L), null, null))
+        when(productRepository.findProductSearchMetaByProductIds(List.of(2L), null))
                 .thenReturn(List.of());
 
         WishlistResponse response = wishlistService.getWishlist();
@@ -182,7 +186,7 @@ class WishlistServiceImplTest {
     void getWishlist_withStoredVariant_resolvesFromVariantOwnImageNotProductDefault() {
 
         Product product = product(3L, "Shoowel");
-        ProductVariant redL = variant(10L, product, Color.RED, Size.L);
+        ProductVariant redL = variant(10L, product, "RED", Size.L);
 
         Wishlist wishlist = Wishlist.builder().id(9L).user(user).build();
         WishlistItem item = WishlistItem.builder()
@@ -190,8 +194,8 @@ class WishlistServiceImplTest {
         wishlist.setWishlistItems(List.of(item));
 
         when(wishlistRepository.findByUser(user)).thenReturn(Optional.of(wishlist));
-        when(productImageRepository.findFirstImageByVariantIds(List.of(10L)))
-                .thenReturn(List.of(new ImageRow(10L, "https://example.com/red-l.jpg")));
+        when(productImageRepository.findFirstImageByProductIdsGroupedByColor(List.of(3L)))
+                .thenReturn(List.of(new ImageRow(3L, "RED", "https://example.com/red-l.jpg")));
 
         WishlistResponse response = wishlistService.getWishlist();
 
@@ -211,8 +215,8 @@ class WishlistServiceImplTest {
 
         Product p1 = product(1L, "No Variant Product");
         Product p3 = product(3L, "Shoowel");
-        ProductVariant redL = variant(10L, p3, Color.RED, Size.L);
-        ProductVariant blackXs = variant(11L, p3, Color.BLACK, Size.XS);
+        ProductVariant redL = variant(10L, p3, "RED", Size.L);
+        ProductVariant blackXs = variant(11L, p3, "BLACK", Size.XS);
 
         Wishlist wishlist = Wishlist.builder().id(9L).user(user).build();
         WishlistItem noVariantItem = WishlistItem.builder().id(1L).wishlist(wishlist).product(p1).build();
@@ -223,26 +227,25 @@ class WishlistServiceImplTest {
         wishlist.setWishlistItems(List.of(noVariantItem, redItem, blackItem));
 
         when(wishlistRepository.findByUser(user)).thenReturn(Optional.of(wishlist));
-        when(productRepository.findProductSearchMetaByProductIds(List.of(1L), null, null))
+        when(productRepository.findProductSearchMetaByProductIds(List.of(1L), null))
                 .thenReturn(List.of(new MetaRow(1L, "https://example.com/default.jpg", "BLUE")));
-        when(productImageRepository.findFirstImageByVariantIds(List.of(10L, 11L)))
+        when(productImageRepository.findFirstImageByProductIdsGroupedByColor(List.of(3L)))
                 .thenReturn(List.of(
-                        new ImageRow(10L, "https://example.com/red-l.jpg"),
-                        new ImageRow(11L, "https://example.com/black-xs.jpg")));
+                        new ImageRow(3L, "RED", "https://example.com/red-l.jpg"),
+                        new ImageRow(3L, "BLACK", "https://example.com/black-xs.jpg")));
 
         wishlistService.getWishlist();
 
         verify(productRepository, times(1))
-                .findProductSearchMetaByProductIds(anyList(), org.mockito.ArgumentMatchers.isNull(),
-                        org.mockito.ArgumentMatchers.isNull());
-        verify(productImageRepository, times(1)).findFirstImageByVariantIds(anyList());
+                .findProductSearchMetaByProductIds(anyList(), org.mockito.ArgumentMatchers.isNull());
+        verify(productImageRepository, times(1)).findFirstImageByProductIdsGroupedByColor(anyList());
     }
 
     @Test
     void addToWishlist_withVariant_storesAndReturnsVariantSpecificImage() {
 
         Product product = product(3L, "Shoowel");
-        ProductVariant redL = variant(10L, product, Color.RED, Size.L);
+        ProductVariant redL = variant(10L, product, "RED", Size.L);
 
         Wishlist wishlist = Wishlist.builder()
                 .id(9L).user(user).wishlistItems(new java.util.ArrayList<>()).build();
@@ -254,8 +257,8 @@ class WishlistServiceImplTest {
                 .thenReturn(Optional.empty());
         when(wishlistItemRepository.save(org.mockito.ArgumentMatchers.any(WishlistItem.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(productImageRepository.findFirstImageByVariantIds(List.of(10L)))
-                .thenReturn(List.of(new ImageRow(10L, "https://example.com/red-l.jpg")));
+        when(productImageRepository.findFirstImageByProductIdsGroupedByColor(List.of(3L)))
+                .thenReturn(List.of(new ImageRow(3L, "RED", "https://example.com/red-l.jpg")));
 
         WishlistResponse response = wishlistService.addToWishlist(
                 AddToWishlistRequest.builder().productId(3L).productVariantId(10L).build());
@@ -271,8 +274,8 @@ class WishlistServiceImplTest {
     void addToWishlist_reAddWithDifferentVariant_createsSeparateItem_doesNotReplace() {
 
         Product product = product(3L, "Shoowel");
-        ProductVariant redL = variant(10L, product, Color.RED, Size.L);
-        ProductVariant blackXs = variant(11L, product, Color.BLACK, Size.XS);
+        ProductVariant redL = variant(10L, product, "RED", Size.L);
+        ProductVariant blackXs = variant(11L, product, "BLACK", Size.XS);
 
         Wishlist wishlist = Wishlist.builder().id(9L).user(user).build();
         WishlistItem existingRedItem = WishlistItem.builder()
@@ -286,8 +289,10 @@ class WishlistServiceImplTest {
                 .thenReturn(Optional.empty());
         when(wishlistItemRepository.save(org.mockito.ArgumentMatchers.any(WishlistItem.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(productImageRepository.findFirstImageByVariantIds(anyList()))
-                .thenReturn(List.of(new ImageRow(11L, "https://example.com/black-xs.jpg")));
+        when(productImageRepository.findFirstImageByProductIdsGroupedByColor(anyList()))
+                .thenReturn(List.of(
+                        new ImageRow(3L, "RED", "https://example.com/red-l.jpg"),
+                        new ImageRow(3L, "BLACK", "https://example.com/black-xs.jpg")));
 
         WishlistResponse response = wishlistService.addToWishlist(
                 AddToWishlistRequest.builder().productId(3L).productVariantId(11L).build());
@@ -306,7 +311,7 @@ class WishlistServiceImplTest {
     void addToWishlist_reAddWithSameVariant_isIdempotent_noDuplicate() {
 
         Product product = product(3L, "Shoowel");
-        ProductVariant redL = variant(10L, product, Color.RED, Size.L);
+        ProductVariant redL = variant(10L, product, "RED", Size.L);
 
         Wishlist wishlist = Wishlist.builder().id(9L).user(user).build();
         WishlistItem existingItem = WishlistItem.builder()
@@ -318,8 +323,8 @@ class WishlistServiceImplTest {
         when(productVariantRepository.findById(10L)).thenReturn(Optional.of(redL));
         when(wishlistItemRepository.findByWishlistAndProductVariant(wishlist, redL))
                 .thenReturn(Optional.of(existingItem));
-        when(productImageRepository.findFirstImageByVariantIds(anyList()))
-                .thenReturn(List.of(new ImageRow(10L, "https://example.com/red-l.jpg")));
+        when(productImageRepository.findFirstImageByProductIdsGroupedByColor(anyList()))
+                .thenReturn(List.of(new ImageRow(3L, "RED", "https://example.com/red-l.jpg")));
 
         WishlistResponse response = wishlistService.addToWishlist(
                 AddToWishlistRequest.builder().productId(3L).productVariantId(10L).build());
@@ -343,8 +348,7 @@ class WishlistServiceImplTest {
         when(productRepository.findById(3L)).thenReturn(Optional.of(product));
         when(wishlistItemRepository.findByWishlistAndProductAndProductVariantIsNull(wishlist, product))
                 .thenReturn(Optional.of(existingItem));
-        when(productRepository.findProductSearchMetaByProductIds(anyList(), org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull()))
+        when(productRepository.findProductSearchMetaByProductIds(anyList(), org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn(List.of());
 
         WishlistResponse response = wishlistService.addToWishlist(
@@ -362,7 +366,7 @@ class WishlistServiceImplTest {
         // adding a specific variant must create a second, independent
         // entry rather than colliding with the generic one.
         Product product = product(3L, "Shoowel");
-        ProductVariant redL = variant(10L, product, Color.RED, Size.L);
+        ProductVariant redL = variant(10L, product, "RED", Size.L);
 
         Wishlist wishlist = Wishlist.builder().id(9L).user(user).build();
         WishlistItem genericItem = WishlistItem.builder()
@@ -376,10 +380,9 @@ class WishlistServiceImplTest {
                 .thenReturn(Optional.empty());
         when(wishlistItemRepository.save(org.mockito.ArgumentMatchers.any(WishlistItem.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(productImageRepository.findFirstImageByVariantIds(anyList()))
-                .thenReturn(List.of(new ImageRow(10L, "https://example.com/red-l.jpg")));
-        when(productRepository.findProductSearchMetaByProductIds(anyList(), org.mockito.ArgumentMatchers.isNull(),
-                org.mockito.ArgumentMatchers.isNull()))
+        when(productImageRepository.findFirstImageByProductIdsGroupedByColor(anyList()))
+                .thenReturn(List.of(new ImageRow(3L, "RED", "https://example.com/red-l.jpg")));
+        when(productRepository.findProductSearchMetaByProductIds(anyList(), org.mockito.ArgumentMatchers.isNull()))
                 .thenReturn(List.of());
 
         WishlistResponse response = wishlistService.addToWishlist(
@@ -396,7 +399,7 @@ class WishlistServiceImplTest {
 
         Product product = product(3L, "Shoowel");
         Product otherProduct = product(4L, "Other Product");
-        ProductVariant otherProductsVariant = variant(20L, otherProduct, Color.RED, Size.L);
+        ProductVariant otherProductsVariant = variant(20L, otherProduct, "RED", Size.L);
 
         Wishlist wishlist = Wishlist.builder()
                 .id(9L).user(user).wishlistItems(new java.util.ArrayList<>()).build();

@@ -32,6 +32,7 @@ import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
 import com.stylenest.stylenest_backend.service.EmailService;
+import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,6 +51,9 @@ class AdminOrderServiceImplTest {
     private InvoiceService invoiceService;
 
     @Mock
+    private InvoiceGenerationService invoiceGenerationService;
+
+    @Mock
     private EmailService emailService;
 
     private AdminOrderServiceImpl adminOrderService;
@@ -58,7 +62,7 @@ class AdminOrderServiceImplTest {
     void setUp() {
 
         adminOrderService = new AdminOrderServiceImpl(
-                orderRepository, shipmentRepository, orderMapper, invoiceService, emailService);
+                orderRepository, shipmentRepository, orderMapper, invoiceService, invoiceGenerationService, emailService);
     }
 
     @Test

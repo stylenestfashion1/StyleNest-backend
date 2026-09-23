@@ -28,7 +28,6 @@ import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductImage;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.Role;
 import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.repository.CategoryRepository;
@@ -179,21 +178,23 @@ class SecurityIntegrationTest {
         ProductVariant variant = productVariantRepository.save(
                 ProductVariant.builder()
                         .product(product)
-                        .color(Color.RED)
+                        .color("RED")
                         .size(Size.M)
                         .stock(5)
                         .build());
 
         productImageRepository.save(
                 ProductImage.builder()
-                        .variant(variant)
+                        .product(product)
+                        .color(variant.getColor())
                         .imageUrl("https://cdn.example.com/floral-dress-2.jpg")
                         .displayOrder(2)
                         .build());
 
         productImageRepository.save(
                 ProductImage.builder()
-                        .variant(variant)
+                        .product(product)
+                        .color(variant.getColor())
                         .imageUrl("https://cdn.example.com/floral-dress-1.jpg")
                         .displayOrder(1)
                         .build());
@@ -225,7 +226,7 @@ class SecurityIntegrationTest {
         productVariantRepository.save(
                 ProductVariant.builder()
                         .product(product)
-                        .color(Color.BLACK)
+                        .color("BLACK")
                         .size(Size.L)
                         .stock(8)
                         .build());
@@ -233,21 +234,23 @@ class SecurityIntegrationTest {
         ProductVariant variantWithImages = productVariantRepository.save(
                 ProductVariant.builder()
                         .product(product)
-                        .color(Color.BLACK)
+                        .color("BLACK")
                         .size(Size.M)
                         .stock(15)
                         .build());
 
         productImageRepository.save(
                 ProductImage.builder()
-                        .variant(variantWithImages)
+                        .product(product)
+                        .color(variantWithImages.getColor())
                         .imageUrl("https://images.unsplash.com/photo-rose-1.jpg")
                         .displayOrder(1)
                         .build());
 
         productImageRepository.save(
                 ProductImage.builder()
-                        .variant(variantWithImages)
+                        .product(product)
+                        .color(variantWithImages.getColor())
                         .imageUrl("https://images.unsplash.com/photo-rose-2.jpg")
                         .displayOrder(2)
                         .build());
@@ -361,7 +364,7 @@ class SecurityIntegrationTest {
                 .price(java.math.BigDecimal.TEN).category(category).build());
 
         ProductVariant variant = productVariantRepository.save(ProductVariant.builder()
-                .product(product).color(Color.BLUE).size(Size.S).stock(10).build());
+                .product(product).color("BLUE").size(Size.S).stock(10).build());
 
         // Order is placed as a guest to avoid needing an authenticated
         // cart/address round trip -- what's under test here is purely the

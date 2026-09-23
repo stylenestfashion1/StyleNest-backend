@@ -111,7 +111,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         return CheckoutItemResponse.builder()
                 .variantId(item.getProductVariant().getId())
                 .productName(item.getProductVariant().getProduct().getName())
-                .color(item.getProductVariant().getColor().name())
+                .color(item.getProductVariant().getColor())
                 .size(item.getProductVariant().getSize().name())
                 .quantity(item.getQuantity())
                 .price(item.getPrice())

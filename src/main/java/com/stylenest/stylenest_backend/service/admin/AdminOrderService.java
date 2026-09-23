@@ -28,4 +28,7 @@ public interface AdminOrderService {
 
     byte[] getInvoicePdf(Long id);
 
+    /** Re-sends the already-generated invoice PDF to the order's customer/guest email. */
+    void resendInvoiceEmail(Long id);
+
 }

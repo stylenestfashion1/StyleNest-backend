@@ -24,7 +24,6 @@ import com.stylenest.stylenest_backend.entity.Cart;
 import com.stylenest.stylenest_backend.entity.CartItem;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.mapper.AddressMapper;
 import com.stylenest.stylenest_backend.repository.AddressRepository;
@@ -108,7 +107,7 @@ class CheckoutServiceImplTest {
 
         ProductVariant variant = ProductVariant.builder()
                 .id(2L)
-                .color(Color.BLACK)
+                .color("BLACK")
                 .size(Size.M)
                 .stock(10)
                 .build();

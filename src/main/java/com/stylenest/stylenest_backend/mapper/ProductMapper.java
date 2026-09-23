@@ -22,10 +22,22 @@ public class ProductMapper {
                 .discountPrice(request.getDiscountPrice())
                 .fabric(request.getFabric())
                 .careInstructions(request.getCareInstructions())
+                .hsnCode(request.getHsnCode())
+                .jeansCode(normalizeJeansCode(request.getJeansCode()))
                 .featured(request.getFeatured())
                 .trending(request.getTrending())
                 .active(request.getActive())
                 .build();
+    }
+
+    // Trims whitespace (the one explicitly-requested normalization) and
+    // collapses blank to null so an empty field clears any existing code
+    // rather than persisting "" -- never alters the code's actual
+    // characters/casing otherwise.
+    private String normalizeJeansCode(String jeansCode) {
+        if (jeansCode == null) return null;
+        String trimmed = jeansCode.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     public ProductResponse toResponse(Product product) {
@@ -38,12 +50,14 @@ public class ProductMapper {
                 .id(product.getId())
                 .name(product.getName())
                 .slug(product.getSlug())
+                .sku(product.getSku())
                 .shortDescription(product.getShortDescription())
                 .description(product.getDescription())
                 .price(product.getPrice())
                 .discountPrice(product.getDiscountPrice())
                 .fabric(product.getFabric())
                 .careInstructions(product.getCareInstructions())
+                .hsnCode(product.getHsnCode())
                 .featured(product.getFeatured())
                 .trending(product.getTrending())
                 .active(product.getActive())
@@ -65,6 +79,8 @@ public class ProductMapper {
         product.setDiscountPrice(request.getDiscountPrice());
         product.setFabric(request.getFabric());
         product.setCareInstructions(request.getCareInstructions());
+        product.setHsnCode(request.getHsnCode());
+        product.setJeansCode(normalizeJeansCode(request.getJeansCode()));
         product.setFeatured(request.getFeatured());
         product.setTrending(request.getTrending());
         product.setActive(request.getActive());

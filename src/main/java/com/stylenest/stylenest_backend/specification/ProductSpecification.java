@@ -177,38 +177,39 @@ public class ProductSpecification {
 
                     if (hasColor) {
 
+                        // Color is free-form (not a fixed enum), so any
+                        // value is a legal filter -- just normalize case
+                        // the same way it's normalized on write (see
+                        // ColorNormalizer), no parse-failure branch needed.
                         predicates.add(
-
                                 cb.equal(
-
                                         variant.get("color"),
-
-                                        Enum.valueOf(
-                                                com.stylenest.stylenest_backend.enums.Color.class,
-                                                request.getColor().toUpperCase()
-                                        )
-
+                                        com.stylenest.stylenest_backend.util.ColorNormalizer.normalize(request.getColor())
                                 )
-
                         );
                     }
 
                     if (hasSize) {
 
-                        predicates.add(
+                        try {
+                            predicates.add(
 
-                                cb.equal(
+                                    cb.equal(
 
-                                        variant.get("size"),
+                                            variant.get("size"),
 
-                                        Enum.valueOf(
-                                                com.stylenest.stylenest_backend.enums.Size.class,
-                                                request.getSize().toUpperCase()
-                                        )
+                                            Enum.valueOf(
+                                                    com.stylenest.stylenest_backend.enums.Size.class,
+                                                    request.getSize().toUpperCase()
+                                            )
 
-                                )
+                                    )
 
-                        );
+                            );
+                        } catch (IllegalArgumentException ex) {
+                            // Same rationale as the color branch above.
+                            predicates.add(cb.disjunction());
+                        }
                     }
                 }
 

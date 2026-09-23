@@ -100,13 +100,21 @@ public class AuthServiceImpl implements AuthService {
         } catch (BadCredentialsException ex) {
 
             throw new InvalidCredentialsException(
-                    "Invalid email or password."
+                    "Please check your email or password."
             );
         }
 
+        // In normal operation this lookup always succeeds -- authenticate()
+        // above already throws for a nonexistent email, caught as
+        // InvalidCredentialsException with the same generic message below.
+        // This orElseThrow is a defensive fallback for that path, so it must
+        // use the same generic message rather than "User not found." --
+        // otherwise a future change to the authentication provider config
+        // (e.g. hideUserNotFoundExceptions) could silently start leaking
+        // which emails are registered.
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() ->
-                        new UserNotFoundException("User not found."));
+                        new InvalidCredentialsException("Please check your email or password."));
 
         String token = generateToken(user);
 

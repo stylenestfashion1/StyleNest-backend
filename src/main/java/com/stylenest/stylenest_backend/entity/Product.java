@@ -47,8 +47,40 @@ public class Product {
 
     private String fabric;
 
+    // Short, stable product code (e.g. "UGT" for "Urban Graphic Tee"),
+    // generated once at creation time -- see SkuGenerator. Every variant's
+    // full SKU is built from this plus its color and size (e.g.
+    // "STN-UGT-BLK-M"), so this must never change after variants exist.
     @Column(unique = true)
     private String sku;
+
+    // HSN code for invoicing -- deliberately nullable with no fabricated
+    // default; a real value must come from the business (see
+    // InvoiceGenerationServiceImpl for how a missing value is handled).
+    private String hsnCode;
+
+    // Admin-only internal identification code (originally requested for
+    // Jeans, but not restricted to that category -- see ProductRequest).
+    // Nullable/optional, admin-entered only, never auto-generated. Unique
+    // when present so it reliably identifies one product; MySQL allows
+    // multiple NULLs under a UNIQUE constraint, so products without a code
+    // (the common case) never collide with each other. Deliberately
+    // EXCLUDED from ProductResponse/ProductMapper.toResponse -- that DTO
+    // is shared by the public, unauthenticated GET /api/products/** and
+    // ADMIN endpoints alike, so anything added there is customer-visible.
+    // Read only via the admin-only ProductJeansCodeResponse endpoints
+    // (see AdminProductController) instead.
+    @Column(name = "jeans_code", unique = true, length = 64)
+    private String jeansCode;
+
+    // UNUSED as of the GST-engine centralization -- no admin API sets this
+    // anymore, and InvoiceGenerationServiceImpl no longer reads it; every
+    // invoice's GST rate is computed automatically from the CBIC apparel
+    // threshold rule at invoice time. Kept only to avoid a schema migration
+    // (see ProductRequest/ProductResponse -- gstRate was intentionally
+    // removed from both). Safe to drop in a future cleanup.
+    @Column(precision = 5, scale = 2)
+    private BigDecimal gstRate;
 
     @Column(columnDefinition = "TEXT")
     private String careInstructions;

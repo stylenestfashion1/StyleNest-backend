@@ -1,7 +1,5 @@
 package com.stylenest.stylenest_backend.dto.product;
 
-import java.util.List;
-
 import lombok.*;
 
 @Data
@@ -15,6 +13,4 @@ public class ProductImageResponse {
     private String imageUrl;
 
     private Integer displayOrder;
-    
-    private List<ProductVariantResponse> variants;
 }

@@ -6,6 +6,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.stylenest.stylenest_backend.dto.invoice.InvoiceResponse;
 import com.stylenest.stylenest_backend.dto.order.GuestOrderRequest;
 import com.stylenest.stylenest_backend.dto.order.GuestOrderTrackingRequest;
 import com.stylenest.stylenest_backend.dto.order.OrderResponse;
@@ -45,6 +46,17 @@ public class GuestOrderController {
                 ApiResponse.success(
                         "Order fetched successfully",
                         guestOrderService.trackOrder(request)));
+    }
+
+    @GetMapping("/invoice/view")
+    public ResponseEntity<ApiResponse<InvoiceResponse>> getInvoiceView(
+            @RequestParam String orderNumber,
+            @RequestParam String phone) {
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Invoice fetched successfully",
+                        guestOrderService.getInvoiceView(orderNumber, phone)));
     }
 
     @GetMapping("/invoice")

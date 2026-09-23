@@ -14,11 +14,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.stylenest.stylenest_backend.dto.order.GuestOrderTrackingRequest;
 import com.stylenest.stylenest_backend.dto.order.OrderResponse;
+import com.stylenest.stylenest_backend.entity.Invoice;
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.User;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
 import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
+import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 import com.stylenest.stylenest_backend.service.OrderService;
 
@@ -37,6 +39,9 @@ class GuestOrderServiceImplTest {
     @Mock
     private InvoiceService invoiceService;
 
+    @Mock
+    private InvoiceGenerationService invoiceGenerationService;
+
     private GuestOrderServiceImpl guestOrderService;
 
     private Order guestOrder;
@@ -44,7 +49,7 @@ class GuestOrderServiceImplTest {
     @BeforeEach
     void setUp() {
 
-        guestOrderService = new GuestOrderServiceImpl(orderService, orderRepository, orderMapper, invoiceService);
+        guestOrderService = new GuestOrderServiceImpl(orderService, orderRepository, orderMapper, invoiceService, invoiceGenerationService);
 
         guestOrder = Order.builder()
                 .id(1L)
@@ -141,8 +146,11 @@ class GuestOrderServiceImplTest {
     @Test
     void getInvoicePdf_correctPhone_returnsGeneratedPdf() {
 
+        Invoice invoice = Invoice.builder().id(1L).build();
+
         when(orderRepository.findByOrderNumber("F21-GUEST-1")).thenReturn(Optional.of(guestOrder));
-        when(invoiceService.generateInvoicePdf(guestOrder)).thenReturn(new byte[] { 1, 2, 3 });
+        when(invoiceGenerationService.generateForRetailOrder(guestOrder)).thenReturn(invoice);
+        when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
 
         byte[] pdf = guestOrderService.getInvoicePdf("F21-GUEST-1", "9998887777");
 

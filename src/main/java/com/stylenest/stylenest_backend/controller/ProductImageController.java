@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.stylenest.stylenest_backend.dto.product.ProductImageRequest;
 import com.stylenest.stylenest_backend.dto.product.ProductImageResponse;
+import com.stylenest.stylenest_backend.dto.product.ReorderImagesRequest;
 import com.stylenest.stylenest_backend.response.ApiResponse;
 import com.stylenest.stylenest_backend.service.ProductImageService;
 
@@ -21,25 +22,40 @@ public class ProductImageController {
 
     private final ProductImageService imageService;
 
-    @PostMapping("/variants/{variantId}/images")
+    @PostMapping("/products/{productId}/colors/{color}/images")
     public ResponseEntity<ApiResponse<ProductImageResponse>> addImage(
-            @PathVariable Long variantId,
+            @PathVariable Long productId,
+            @PathVariable String color,
             @Valid @RequestBody ProductImageRequest request) {
 
-        ProductImageResponse response = imageService.addImage(variantId, request);
+        ProductImageResponse response = imageService.addImage(productId, color, request);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Image added successfully", response));
     }
 
-    @GetMapping("/variants/{variantId}/images")
+    @GetMapping("/products/{productId}/colors/{color}/images")
     public ResponseEntity<ApiResponse<List<ProductImageResponse>>> getImages(
-            @PathVariable Long variantId) {
+            @PathVariable Long productId,
+            @PathVariable String color) {
 
-        List<ProductImageResponse> response = imageService.getImagesByVariant(variantId);
+        List<ProductImageResponse> response = imageService.getImagesByProductAndColor(productId, color);
 
         return ResponseEntity.ok(
                 ApiResponse.success("Images fetched successfully", response));
+    }
+
+    @PutMapping("/products/{productId}/colors/{color}/images/reorder")
+    public ResponseEntity<ApiResponse<List<ProductImageResponse>>> reorderImages(
+            @PathVariable Long productId,
+            @PathVariable String color,
+            @Valid @RequestBody ReorderImagesRequest request) {
+
+        List<ProductImageResponse> response =
+                imageService.reorderImages(productId, color, request.getOrderedImageIds());
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Images reordered successfully", response));
     }
 
     @DeleteMapping("/images/{imageId}")

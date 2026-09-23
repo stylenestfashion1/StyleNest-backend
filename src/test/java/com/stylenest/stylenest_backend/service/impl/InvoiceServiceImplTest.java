@@ -4,63 +4,97 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
+import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.Test;
 
 import com.stylenest.stylenest_backend.dto.invoice.InvoiceResponse;
+import com.stylenest.stylenest_backend.entity.Invoice;
+import com.stylenest.stylenest_backend.entity.InvoiceItem;
 import com.stylenest.stylenest_backend.entity.Order;
-import com.stylenest.stylenest_backend.entity.OrderItem;
-import com.stylenest.stylenest_backend.entity.Product;
-import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
-import com.stylenest.stylenest_backend.enums.PaymentMethod;
-import com.stylenest.stylenest_backend.enums.PaymentStatus;
-import com.stylenest.stylenest_backend.enums.Size;
+import com.stylenest.stylenest_backend.enums.InvoiceOrderType;
 
+/**
+ * InvoiceServiceImpl is a pure renderer over an already-built Invoice
+ * snapshot (see InvoiceGenerationServiceImpl for the actual GST/discount
+ * calculation, which is tested separately) -- these tests construct the
+ * snapshot directly and verify the PDF/JSON view faithfully reflects it,
+ * never recomputes anything from live data.
+ */
 class InvoiceServiceImplTest {
 
     private final InvoiceServiceImpl invoiceService = new InvoiceServiceImpl();
 
-    private Order buildOrder(boolean guest) {
+    private Invoice buildInvoice(boolean guest) {
 
-        Product product = Product.builder().id(1L).name("Rose Wrap Midi Dress").price(new BigDecimal("2799.00")).build();
+        Order.OrderBuilder orderBuilder = Order.builder().id(1L).orderNumber("SN-INV-1");
 
-        ProductVariant variant = ProductVariant.builder()
-                .id(1L).product(product).color(Color.BLACK).size(Size.M).stock(5).build();
-
-        OrderItem item = OrderItem.builder()
-                .productVariant(variant).quantity(2).price(new BigDecimal("2799.00")).build();
-
-        Order.OrderBuilder builder = Order.builder()
-                .id(1L)
-                .orderNumber("F21-INV-1")
-                .totalAmount(new BigDecimal("5598.00"))
-                .paymentMethod(PaymentMethod.COD)
-                .paymentStatus(PaymentStatus.PENDING)
-                .shippingFullName(guest ? "Guest Customer" : "Registered Customer")
-                .shippingAddressLine1("123 Main St")
-                .shippingCity("Testville")
-                .shippingState("TS")
-                .shippingPostalCode("123456")
-                .shippingCountry("India")
-                .shippingPhone("9999999999")
-                .orderItems(List.of(item));
-
-        if (guest) {
-            builder.guestEmail("guest@example.com");
-        } else {
-            builder.user(User.builder().id(1L).email("customer@example.com").build());
+        if (!guest) {
+            orderBuilder.user(User.builder().id(1L).email("customer@example.com").build());
         }
 
-        return builder.build();
+        Order order = orderBuilder.build();
+
+        InvoiceItem item = InvoiceItem.builder()
+                .productName("Rose Wrap Midi Dress")
+                .variantInfo("BLACK / M")
+                .hsnCode("6204")
+                .mrpPerUnit(new BigDecimal("2666.67"))
+                .quantity(2)
+                .unit("Unit")
+                .pricePerUnit(new BigDecimal("2666.67"))
+                .discountAmount(BigDecimal.ZERO)
+                .discountPercent(BigDecimal.ZERO)
+                .gstRate(new BigDecimal("5"))
+                .gstAmount(new BigDecimal("266.66"))
+                .taxableAmount(new BigDecimal("5333.34"))
+                .lineTotal(new BigDecimal("5600.00"))
+                .build();
+
+        Invoice invoice = Invoice.builder()
+                .id(1L)
+                .invoiceNumber("INV-000001")
+                .invoiceDate(LocalDateTime.now())
+                .orderType(InvoiceOrderType.RETAIL)
+                .retailOrder(order)
+                .sellerName("Style Nest Fashion")
+                .sellerAddress("175-B, Amrit Palace, Nipania, Indore, Madhya Pradesh - 452010")
+                .sellerPhone("6269933231")
+                .sellerEmail("stylenestfashion1@gmail.com")
+                .sellerState("Madhya Pradesh")
+                .sellerGstin("23ABUCS8160R1ZA")
+                .sellerCin("U14101MP2026PTC086429")
+                .customerName(guest ? "Guest Customer" : "Registered Customer")
+                .customerEmail(guest ? "guest@example.com" : "customer@example.com")
+                .billingAddressLine1("123 Main St")
+                .billingCity("Testville")
+                .billingState("Madhya Pradesh")
+                .billingPostalCode("123456")
+                .billingCountry("India")
+                .taxableAmount(new BigDecimal("5333.34"))
+                .totalDiscount(BigDecimal.ZERO)
+                .cgstAmount(new BigDecimal("133.33"))
+                .sgstAmount(new BigDecimal("133.33"))
+                .igstAmount(BigDecimal.ZERO)
+                .shippingCharge(BigDecimal.ZERO)
+                .roundOff(BigDecimal.ZERO)
+                .grandTotal(new BigDecimal("5600.00"))
+                .amountInWords("Five Thousand Six Hundred Rupees only")
+                .paymentMethod("COD")
+                .paymentStatus("PENDING")
+                .build();
+
+        item.setInvoice(invoice);
+        invoice.getItems().add(item);
+
+        return invoice;
     }
 
     @Test
-    void generateInvoicePdf_returnsNonEmptyValidPdfBytes() {
+    void generatePdf_returnsNonEmptyValidPdfBytes() {
 
-        byte[] pdf = invoiceService.generateInvoicePdf(buildOrder(false));
+        byte[] pdf = invoiceService.generatePdf(buildInvoice(false));
 
         assertThat(pdf).isNotEmpty();
         // PDF files start with the "%PDF" magic bytes.
@@ -69,55 +103,64 @@ class InvoiceServiceImplTest {
     }
 
     @Test
-    void generateInvoicePdf_guestOrder_alsoProducesValidPdf() {
+    void generatePdf_guestOrder_alsoProducesValidPdf() {
 
-        byte[] pdf = invoiceService.generateInvoicePdf(buildOrder(true));
+        byte[] pdf = invoiceService.generatePdf(buildInvoice(true));
 
         assertThat(pdf).isNotEmpty();
         assertThat(new String(pdf, 0, 4, StandardCharsets.US_ASCII)).isEqualTo("%PDF");
     }
 
     @Test
-    void generateInvoicePdf_totalNotRecomputed_reflectsOrderAtPurchaseTimeNotLiveProductPrice() {
+    void buildView_reflectsExactlyWhatWasSnapshotted_neverRecomputed() {
 
-        Order order = buildOrder(false);
+        Invoice invoice = buildInvoice(false);
 
-        // Simulate the product's live price changing after the order was
-        // placed -- the invoice total must still be the order's own
-        // totalAmount (5598.00), never recomputed from this new price.
-        order.getOrderItems().get(0).getProductVariant().getProduct().setPrice(new BigDecimal("9999.00"));
+        InvoiceResponse view = invoiceService.buildView(invoice);
 
-        InvoiceResponse view = invoiceService.buildInvoiceView(order);
-
-        assertThat(view.getTotalAmount()).isEqualByComparingTo("5598.00");
-        assertThat(view.getItems().get(0).getPrice()).isEqualByComparingTo("2799.00"); // the order-item's own stored price
+        // The whole point of the snapshot architecture: the view must equal
+        // whatever was stored on the Invoice/InvoiceItem at generation time,
+        // not something derived fresh from live product/order data.
+        assertThat(view.getGrandTotal()).isEqualByComparingTo("5600.00");
+        assertThat(view.getItems().get(0).getPricePerUnit()).isEqualByComparingTo("2666.67");
+        assertThat(view.getItems().get(0).getLineTotal()).isEqualByComparingTo("5600.00");
     }
 
     @Test
-    void buildInvoiceView_guestOrder_usesGuestEmailAndSnapshotAddress() {
+    void buildView_guestOrder_usesGuestEmailAndSnapshotAddress() {
 
-        InvoiceResponse view = invoiceService.buildInvoiceView(buildOrder(true));
+        InvoiceResponse view = invoiceService.buildView(buildInvoice(true));
 
         assertThat(view.getIsGuest()).isTrue();
         assertThat(view.getCustomerEmail()).isEqualTo("guest@example.com");
         assertThat(view.getCustomerName()).isEqualTo("Guest Customer");
-        assertThat(view.getShippingCity()).isEqualTo("Testville");
+        assertThat(view.getBillingCity()).isEqualTo("Testville");
     }
 
     @Test
-    void buildInvoiceView_registeredOrder_usesUserEmail() {
+    void buildView_registeredOrder_isGuestFalse() {
 
-        InvoiceResponse view = invoiceService.buildInvoiceView(buildOrder(false));
+        InvoiceResponse view = invoiceService.buildView(buildInvoice(false));
 
         assertThat(view.getIsGuest()).isFalse();
         assertThat(view.getCustomerEmail()).isEqualTo("customer@example.com");
     }
 
     @Test
-    void buildInvoiceView_invoiceNumberIsOrderNumber() {
+    void buildView_invoiceNumberComesFromTheSnapshot() {
 
-        InvoiceResponse view = invoiceService.buildInvoiceView(buildOrder(false));
+        InvoiceResponse view = invoiceService.buildView(buildInvoice(false));
 
-        assertThat(view.getInvoiceNumber()).isEqualTo("F21-INV-1");
+        assertThat(view.getInvoiceNumber()).isEqualTo("INV-000001");
+        assertThat(view.getOrderNumber()).isEqualTo("SN-INV-1");
+    }
+
+    @Test
+    void buildView_intraStateOrder_taxBreakupSplitsCgstAndSgst() {
+
+        InvoiceResponse view = invoiceService.buildView(buildInvoice(false));
+
+        assertThat(view.getInterState()).isFalse();
+        assertThat(view.getTaxBreakup()).extracting("taxType").contains("CGST", "SGST");
     }
 }

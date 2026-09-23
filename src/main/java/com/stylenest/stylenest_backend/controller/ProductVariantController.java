@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.stylenest.stylenest_backend.dto.product.ProductVariantRequest;
 import com.stylenest.stylenest_backend.dto.product.ProductVariantResponse;
+import com.stylenest.stylenest_backend.dto.product.RenameColorGroupRequest;
 import com.stylenest.stylenest_backend.response.ApiResponse;
 import com.stylenest.stylenest_backend.service.ProductVariantService;
 
@@ -51,6 +52,20 @@ public class ProductVariantController {
 
         return ResponseEntity.ok(
                 ApiResponse.success("Variant updated successfully", response));
+    }
+
+    // Color-group level edit: renames every existing size of one color to a new color in one
+    // operation, instead of editing color per individual size variant.
+    @PutMapping("/products/{productId}/colors/{color}/rename")
+    public ResponseEntity<ApiResponse<List<ProductVariantResponse>>> renameColorGroup(
+            @PathVariable Long productId,
+            @PathVariable String color,
+            @Valid @RequestBody RenameColorGroupRequest request) {
+
+        List<ProductVariantResponse> response = variantService.renameColorGroup(productId, color, request);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Color updated successfully", response));
     }
 
     @DeleteMapping("/variants/{variantId}")

@@ -31,13 +31,13 @@ import com.stylenest.stylenest_backend.dto.order.OrderResponse;
 import com.stylenest.stylenest_backend.entity.Address;
 import com.stylenest.stylenest_backend.entity.Cart;
 import com.stylenest.stylenest_backend.entity.CartItem;
+import com.stylenest.stylenest_backend.entity.Invoice;
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.OrderItem;
 import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.Shipment;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
@@ -48,12 +48,14 @@ import com.stylenest.stylenest_backend.exception.PendingPaymentExistsException;
 import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.AddressRepository;
 import com.stylenest.stylenest_backend.repository.CartRepository;
+import com.stylenest.stylenest_backend.repository.InvoiceRepository;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.repository.ProductVariantRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentHistoryRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
 import com.stylenest.stylenest_backend.repository.UserRepository;
 import com.stylenest.stylenest_backend.service.EmailService;
+import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 
 @ExtendWith(MockitoExtension.class)
@@ -84,6 +86,12 @@ class OrderServiceImplTest {
     private InvoiceService invoiceService;
 
     @Mock
+    private InvoiceGenerationService invoiceGenerationService;
+
+    @Mock
+    private InvoiceRepository invoiceRepository;
+
+    @Mock
     private EmailService emailService;
 
     private OrderMapper orderMapper;
@@ -98,12 +106,12 @@ class OrderServiceImplTest {
     @BeforeEach
     void setUp() {
 
-        orderMapper = new OrderMapper(shipmentRepository);
+        orderMapper = new OrderMapper(shipmentRepository, invoiceRepository);
 
         orderService = new OrderServiceImpl(
                 userRepository, productVariantRepository, cartRepository,
                 addressRepository, orderRepository, shipmentRepository,
-                shipmentHistoryRepository, orderMapper, invoiceService, emailService);
+                shipmentHistoryRepository, orderMapper, invoiceService, invoiceGenerationService, emailService);
 
         user = User.builder().id(1L).email("customer@example.com").fullName("Customer").build();
 
@@ -126,7 +134,7 @@ class OrderServiceImplTest {
                 .id(1L)
                 .product(product)
                 .stock(5)
-                .color(Color.BLACK)
+                .color("BLACK")
                 .size(Size.M)
                 .build();
 
@@ -188,6 +196,10 @@ class OrderServiceImplTest {
         when(addressRepository.findByUserAndIsDefaultTrue(user)).thenReturn(Optional.of(address));
         when(productVariantRepository.findById(1L)).thenReturn(Optional.of(variant));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Invoice invoice = Invoice.builder().id(1L).build();
+        when(invoiceGenerationService.generateForRetailOrder(any(Order.class))).thenReturn(invoice);
+        when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
 
         orderService.placeOrder(OrderRequest.builder().paymentMethod(PaymentMethod.COD).build());
 
@@ -317,7 +329,9 @@ class OrderServiceImplTest {
                 .confirmationEmailSent(false)
                 .build();
 
-        when(invoiceService.generateInvoicePdf(order)).thenReturn(new byte[] { 1, 2, 3 });
+        Invoice invoice = Invoice.builder().id(1L).invoiceNumber("INV-000001").build();
+        when(invoiceGenerationService.generateForRetailOrder(order)).thenReturn(invoice);
+        when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
 
         orderService.markOnlinePaymentPaid(order);
 
@@ -346,7 +360,7 @@ class OrderServiceImplTest {
                 .confirmationEmailSent(false)
                 .build();
 
-        when(invoiceService.generateInvoicePdf(order))
+        when(invoiceGenerationService.generateForRetailOrder(order))
                 .thenThrow(new RuntimeException("PDF generation blew up"));
 
         // Must not throw -- a PDF/email failure is swallowed, never
@@ -443,6 +457,10 @@ class OrderServiceImplTest {
 
         when(productVariantRepository.findById(1L)).thenReturn(Optional.of(variant));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Invoice invoice = Invoice.builder().id(1L).build();
+        when(invoiceGenerationService.generateForRetailOrder(any(Order.class))).thenReturn(invoice);
+        when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
 
         OrderResponse response = orderService.placeGuestOrder(guestRequest(PaymentMethod.COD));
 

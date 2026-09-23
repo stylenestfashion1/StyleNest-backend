@@ -3,6 +3,7 @@ package com.stylenest.stylenest_backend.exception;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -10,6 +11,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -45,7 +47,8 @@ public class GlobalExceptionHandler {
             ProductHasOrderHistoryException.class,
             AddressHasOrderHistoryException.class,
             PendingPaymentExistsException.class,
-            CategoryHasProductsException.class
+            CategoryHasProductsException.class,
+            MobileNumberAlreadyUsedException.class
     })
     public ResponseEntity<ApiResponse<Object>> handleDuplicate(
             RuntimeException ex) {
@@ -128,6 +131,70 @@ public class GlobalExceptionHandler {
                 null);
     }
 
+    // Bulk Order Access Token -- Invalid / Expired / Rate-Limited
+
+    @ExceptionHandler(BulkTokenInvalidException.class)
+    public ResponseEntity<ApiResponse<Object>> handleBulkTokenInvalid(
+            BulkTokenInvalidException ex) {
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage(),
+                null);
+    }
+
+    @ExceptionHandler(BulkTokenRevokedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleBulkTokenRevoked(
+            BulkTokenRevokedException ex) {
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage(),
+                null);
+    }
+
+    @ExceptionHandler(BulkTokenAlreadyAssignedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleBulkTokenAlreadyAssigned(
+            BulkTokenAlreadyAssignedException ex) {
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage(),
+                null);
+    }
+
+    @ExceptionHandler(BulkAccessRateLimitedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleBulkAccessRateLimited(
+            BulkAccessRateLimitedException ex) {
+
+        return buildResponse(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ex.getMessage(),
+                null);
+    }
+
+    // In-Store QR Discount -- Invalid QR Token / Invalid or Expired Offer Session
+
+    @ExceptionHandler(DiscountQrTokenInvalidException.class)
+    public ResponseEntity<ApiResponse<Object>> handleDiscountQrTokenInvalid(
+            DiscountQrTokenInvalidException ex) {
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage(),
+                null);
+    }
+
+    @ExceptionHandler(DiscountSessionInvalidException.class)
+    public ResponseEntity<ApiResponse<Object>> handleDiscountSessionInvalid(
+            DiscountSessionInvalidException ex) {
+
+        return buildResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMessage(),
+                null);
+    }
+
     // Forbidden
 
     @ExceptionHandler(UnauthorizedAccessException.class)
@@ -198,6 +265,20 @@ public class GlobalExceptionHandler {
                 errors);
     }
 
+    // A query/path param couldn't be converted to its declared type (e.g.
+    // ?gender=INVALID against an enum param) -- without this, it falls
+    // through to the generic Exception.class handler below as a 500,
+    // when it's really just a bad request.
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Object>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Invalid value for parameter '" + ex.getName() + "'.",
+                null);
+    }
+
     // No Route Matches The Request URL
 
     @ExceptionHandler(NoHandlerFoundException.class)
@@ -233,6 +314,24 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.METHOD_NOT_ALLOWED,
                 ex.getMessage(),
+                null);
+    }
+
+    // Database Constraint Violation (e.g. a unique index collision that
+    // slipped past application-level checks) -- a clean 409 instead of
+    // falling through to the generic 500 below, which is exactly what
+    // produced the unhelpful "Something went wrong" an admin hit when a
+    // SKU collision occurred (see ProductVariantServiceImpl.generateVariantSku).
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Object>> handleDataIntegrityViolation(
+            DataIntegrityViolationException ex) {
+
+        ex.printStackTrace();
+
+        return buildResponse(
+                HttpStatus.CONFLICT,
+                "This action conflicts with existing data (e.g. a duplicate value). Please try again.",
                 null);
     }
 

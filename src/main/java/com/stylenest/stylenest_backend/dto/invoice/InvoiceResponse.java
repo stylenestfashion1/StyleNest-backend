@@ -4,15 +4,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import com.stylenest.stylenest_backend.enums.PaymentMethod;
-import com.stylenest.stylenest_backend.enums.PaymentStatus;
-
 import lombok.*;
 
 /**
- * JSON view of an invoice -- built entirely from an Order's retained data
- * (never recomputed from live product prices). orderNumber doubles as the
- * invoice number; order creation time doubles as the invoice date.
+ * Full JSON view of a GST invoice -- built entirely from a persisted
+ * {@link com.stylenest.stylenest_backend.entity.Invoice} snapshot, never
+ * recomputed from live product/order data.
  */
 @Getter
 @Setter
@@ -21,39 +18,54 @@ import lombok.*;
 @Builder
 public class InvoiceResponse {
 
+    private Long invoiceId;
     private String invoiceNumber;
-
     private LocalDateTime invoiceDate;
 
+    private String orderType; // RETAIL | BULK
     private Long orderId;
-
     private String orderNumber;
-
     private Boolean isGuest;
 
+    // Seller
+    private String sellerName;
+    private String sellerAddress;
+    private String sellerPhone;
+    private String sellerEmail;
+    private String sellerState;
+    private String sellerGstin;
+    private String sellerCin;
+
+    // Customer / bill-to
     private String customerName;
-
     private String customerEmail;
-
     private String customerPhone;
+    private String customerGstin;
+    private String billingAddressLine1;
+    private String billingAddressLine2;
+    private String billingCity;
+    private String billingState;
+    private String billingPostalCode;
+    private String billingCountry;
 
-    private String shippingAddressLine1;
+    private List<InvoiceLineItemResponse> items;
 
-    private String shippingAddressLine2;
+    private BigDecimal taxableAmount;
+    private BigDecimal totalDiscount;
+    private BigDecimal cgstAmount;
+    private BigDecimal sgstAmount;
+    private BigDecimal igstAmount;
+    private BigDecimal shippingCharge;
+    private BigDecimal roundOff;
+    private BigDecimal grandTotal;
+    private Boolean interState;
 
-    private String shippingCity;
+    private List<InvoiceTaxBreakupResponse> taxBreakup;
 
-    private String shippingState;
+    private String amountInWords;
 
-    private String shippingPostalCode;
-
-    private String shippingCountry;
-
-    private List<InvoiceItemResponse> items;
-
-    private BigDecimal totalAmount;
-
-    private PaymentMethod paymentMethod;
-
-    private PaymentStatus paymentStatus;
+    private String paymentMethod;
+    private String paymentStatus;
+    private BigDecimal amountReceived;
+    private BigDecimal balanceDue;
 }

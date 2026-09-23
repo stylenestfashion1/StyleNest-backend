@@ -25,6 +25,7 @@ import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
 import com.stylenest.stylenest_backend.service.EmailService;
+import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 import com.stylenest.stylenest_backend.service.admin.AdminOrderService;
 import com.stylenest.stylenest_backend.specification.OrderSpecification;
@@ -40,6 +41,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final ShipmentRepository shipmentRepository;
     private final OrderMapper orderMapper;
     private final InvoiceService invoiceService;
+    private final InvoiceGenerationService invoiceGenerationService;
     private final EmailService emailService;
 
     @Override
@@ -157,17 +159,33 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public InvoiceResponse getInvoiceView(Long id) {
 
-        return invoiceService.buildInvoiceView(findOrder(id));
+        return invoiceService.buildView(invoiceGenerationService.generateForRetailOrder(findOrder(id)));
     }
 
     @Override
-    @Transactional(readOnly = true)
     public byte[] getInvoicePdf(Long id) {
 
-        return invoiceService.generateInvoicePdf(findOrder(id));
+        return invoiceService.generatePdf(invoiceGenerationService.generateForRetailOrder(findOrder(id)));
+    }
+
+    @Override
+    public void resendInvoiceEmail(Long id) {
+
+        Order order = findOrder(id);
+        var invoice = invoiceGenerationService.generateForRetailOrder(order);
+        byte[] pdf = invoiceService.generatePdf(invoice);
+
+        String recipient = order.getUser() != null ? order.getUser().getEmail() : order.getGuestEmail();
+
+        if (recipient == null || recipient.isBlank()) {
+            throw new BadRequestException("This order has no email address on file.");
+        }
+
+        emailService.sendInvoiceEmail(
+                recipient, order.getShippingFullName(), invoice.getInvoiceNumber(),
+                order.getOrderNumber(), order.getTotalAmount(), pdf);
     }
 
     private Order findOrder(Long id) {

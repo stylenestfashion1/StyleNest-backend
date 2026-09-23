@@ -36,6 +36,8 @@ public class OrderResponse {
 
     private Boolean isGuest;
 
+    private String email;
+
     private ShippingAddressSnapshotResponse shippingAddress;
 
     private ShipmentStatus shipmentStatus;

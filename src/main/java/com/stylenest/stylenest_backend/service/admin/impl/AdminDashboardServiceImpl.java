@@ -93,7 +93,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return LowStockProductResponse.builder()
                 .productId(variant.getProduct().getId())
                 .productName(variant.getProduct().getName())
-                .color(variant.getColor().name())
+                .color(variant.getColor())
                 .size(variant.getSize().name())
                 .stock(variant.getStock())
                 .build();

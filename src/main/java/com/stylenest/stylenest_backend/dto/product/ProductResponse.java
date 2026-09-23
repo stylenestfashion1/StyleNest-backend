@@ -21,6 +21,10 @@ public class ProductResponse {
 
     private String slug;
 
+    @Schema(description = "Short, stable product code (e.g. \"UGT\") used as the prefix for "
+            + "every variant SKU (e.g. \"STN-UGT-BLK-M\"). Auto-generated once at creation.")
+    private String sku;
+
     private String shortDescription;
 
     private String description;
@@ -32,6 +36,8 @@ public class ProductResponse {
     private String fabric;
 
     private String careInstructions;
+
+    private String hsnCode;
 
     private Boolean featured;
 

@@ -41,7 +41,7 @@ public class ProductThumbnailResolver {
         // value.
         Map<Long, String> thumbnails = new HashMap<>();
 
-        for (Map.Entry<Long, ProductSearchMeta> entry : resolveMeta(productIds, null, null).entrySet()) {
+        for (Map.Entry<Long, ProductSearchMeta> entry : resolveMeta(productIds, null).entrySet()) {
             thumbnails.put(entry.getKey(), entry.getValue().thumbnailUrl());
         }
 
@@ -51,12 +51,10 @@ public class ProductThumbnailResolver {
     /**
      * Full metadata lookup (thumbnail + available colors), optionally
      * preferring the thumbnail of a variant matching the given color
-     * and/or size (e.g. an active search filter). Pass null for either to
-     * skip that preference -- pass null for both for the plain default
-     * resolution.
+     * (e.g. an active search filter). Pass null to skip that preference.
      */
     public Map<Long, ProductSearchMeta> resolveMeta(
-            List<Long> productIds, String color, String size) {
+            List<Long> productIds, String color) {
 
         if (productIds == null || productIds.isEmpty()) {
             return Collections.emptyMap();
@@ -65,7 +63,6 @@ public class ProductThumbnailResolver {
         List<Long> distinctIds = productIds.stream().distinct().toList();
 
         String normalizedColor = normalize(color);
-        String normalizedSize = normalize(size);
 
         Map<Long, ProductSearchMeta> result = distinctIds.stream()
                 .collect(Collectors.toMap(id -> id, id -> ProductSearchMeta.EMPTY));
@@ -79,7 +76,7 @@ public class ProductThumbnailResolver {
         Map<Long, Set<String>> colorsByProduct = new HashMap<>();
 
         for (ProductSearchMetaProjection row : productRepository.findProductSearchMetaByProductIds(
-                distinctIds, normalizedColor, normalizedSize)) {
+                distinctIds, normalizedColor)) {
 
             thumbnailByProduct.putIfAbsent(row.getProductId(), row.getThumbnailUrl());
 

@@ -39,7 +39,7 @@ public class WishlistMapper {
         if (variant != null) {
             variantId = variant.getId();
             imageUrl = variantImages.get(variantId);
-            color = variant.getColor().name();
+            color = variant.getColor();
             size = variant.getSize().name();
         } else {
             imageUrl = productThumbnails.get(item.getProduct().getId());

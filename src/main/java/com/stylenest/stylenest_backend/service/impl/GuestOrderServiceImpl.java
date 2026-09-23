@@ -3,6 +3,7 @@ package com.stylenest.stylenest_backend.service.impl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.stylenest.stylenest_backend.dto.invoice.InvoiceResponse;
 import com.stylenest.stylenest_backend.dto.order.GuestOrderRequest;
 import com.stylenest.stylenest_backend.dto.order.GuestOrderTrackingRequest;
 import com.stylenest.stylenest_backend.dto.order.OrderResponse;
@@ -11,6 +12,7 @@ import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
 import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.service.GuestOrderService;
+import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 import com.stylenest.stylenest_backend.service.OrderService;
 
@@ -32,6 +34,7 @@ public class GuestOrderServiceImpl implements GuestOrderService {
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
     private final InvoiceService invoiceService;
+    private final InvoiceGenerationService invoiceGenerationService;
 
     @Override
     public OrderResponse placeOrder(GuestOrderRequest request) {
@@ -49,12 +52,19 @@ public class GuestOrderServiceImpl implements GuestOrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    public InvoiceResponse getInvoiceView(String orderNumber, String phone) {
+
+        Order order = findVerifiedGuestOrder(orderNumber, phone);
+
+        return invoiceService.buildView(invoiceGenerationService.generateForRetailOrder(order));
+    }
+
+    @Override
     public byte[] getInvoicePdf(String orderNumber, String phone) {
 
         Order order = findVerifiedGuestOrder(orderNumber, phone);
 
-        return invoiceService.generateInvoicePdf(order);
+        return invoiceService.generatePdf(invoiceGenerationService.generateForRetailOrder(order));
     }
 
     /**

@@ -115,4 +115,12 @@ public class AdminOrderController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"Invoice-" + id + ".pdf\"")
                 .body(pdf);
     }
+
+    @PostMapping("/{id}/invoice/resend-email")
+    public ResponseEntity<ApiResponse<Void>> resendInvoiceEmail(@PathVariable Long id) {
+
+        adminOrderService.resendInvoiceEmail(id);
+
+        return ResponseEntity.ok(ApiResponse.success("Invoice email resent", null));
+    }
 }

@@ -25,7 +25,6 @@ import com.stylenest.stylenest_backend.entity.Category;
 import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.Role;
 import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.repository.CategoryRepository;
@@ -102,7 +101,7 @@ class AdminOrderManagementIntegrationTest {
                 .price(new BigDecimal("1000.00")).category(category).build());
 
         variant = productVariantRepository.save(ProductVariant.builder()
-                .product(product).color(Color.RED).size(Size.L).stock(10).build());
+                .product(product).color("RED").size(Size.L).stock(10).build());
     }
 
     private Long placeGuestOrder(String guestEmail) throws Exception {

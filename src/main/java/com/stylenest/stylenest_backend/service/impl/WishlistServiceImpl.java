@@ -157,14 +157,13 @@ public class WishlistServiceImpl implements WishlistService {
                 .map(item -> item.getProduct().getId())
                 .toList();
 
-        List<Long> variantIds = items.stream()
+        List<ProductVariant> variantsWithImages = items.stream()
                 .map(WishlistItem::getProductVariant)
                 .filter(Objects::nonNull)
-                .map(ProductVariant::getId)
                 .toList();
 
         Map<Long, String> productThumbnails = thumbnailResolver.resolve(productIds);
-        Map<Long, String> variantImages = variantImageResolver.resolve(variantIds);
+        Map<Long, String> variantImages = variantImageResolver.resolve(variantsWithImages);
 
         return wishlistMapper.toWishlistResponse(wishlist, productThumbnails, variantImages);
     }

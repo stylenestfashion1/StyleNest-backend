@@ -21,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.stylenest.stylenest_backend.entity.Category;
 import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
-import com.stylenest.stylenest_backend.enums.Color;
 import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.repository.CategoryRepository;
 import com.stylenest.stylenest_backend.repository.ProductRepository;
@@ -69,7 +68,7 @@ class GuestCheckoutIntegrationTest {
 
         variant = productVariantRepository.save(ProductVariant.builder()
                 .product(product)
-                .color(Color.BLACK)
+                .color("BLACK")
                 .size(Size.M)
                 .stock(5)
                 .build());

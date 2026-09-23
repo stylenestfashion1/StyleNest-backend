@@ -28,6 +28,8 @@ public class OrderConfirmationEmailData {
 
     private String orderNumber;
 
+    private String invoiceNumber;
+
     private LocalDateTime orderDate;
 
     private List<InvoiceItemResponse> items;

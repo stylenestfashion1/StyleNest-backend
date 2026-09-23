@@ -48,7 +48,7 @@ class ProductThumbnailResolverTest {
         // it to ProductSearchMeta.EMPTY, whose thumbnailUrl() is null. A
         // plain Map<Long,String> must be able to hold that null value
         // rather than throwing (this previously NPE'd via Collectors.toMap).
-        when(productRepository.findProductSearchMetaByProductIds(List.of(1L, 2L), null, null))
+        when(productRepository.findProductSearchMetaByProductIds(List.of(1L, 2L), null))
                 .thenReturn(List.of(new MetaRow(1L, "https://cdn.example.com/1.jpg", "RED")));
 
         Map<Long, String> result = resolver.resolve(List.of(1L, 2L));
