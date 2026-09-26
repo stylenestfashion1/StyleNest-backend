@@ -115,6 +115,20 @@ public class Product {
     )@Builder.Default
     private List<ProductVariant> variants = new ArrayList<>();
 
+    // Per-currency pricing (see ProductPrice). The INR row is a read-only
+    // mirror of price/discountPrice above, kept in sync by ProductServiceImpl
+    // -- this list is never independently written to for INR. USD (and any
+    // future currency) rows here are the sole source of truth for that
+    // market, admin-set only.
+    @OneToMany(
+            mappedBy = "product",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
+    )
+    @Builder.Default
+    private List<ProductPrice> prices = new ArrayList<>();
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

@@ -87,6 +87,7 @@ public class CartMapper {
 
         return CartResponse.builder()
                 .cartId(cart.getId())
+                .currency(cart.getCurrency())
                 .items(items)
                 .totalPrice(totalPrice)
                 .totalItems(totalItems)

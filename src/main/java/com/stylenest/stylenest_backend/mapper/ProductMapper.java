@@ -4,9 +4,11 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
+import com.stylenest.stylenest_backend.dto.product.ProductPriceResponse;
 import com.stylenest.stylenest_backend.dto.product.ProductRequest;
 import com.stylenest.stylenest_backend.dto.product.ProductResponse;
 import com.stylenest.stylenest_backend.entity.Product;
+import com.stylenest.stylenest_backend.entity.ProductPrice;
 import com.stylenest.stylenest_backend.service.ProductSearchMeta;
 
 @Component
@@ -40,6 +42,16 @@ public class ProductMapper {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private List<ProductPriceResponse> toPriceResponses(List<ProductPrice> prices) {
+        return prices.stream()
+                .map(pp -> ProductPriceResponse.builder()
+                        .currency(pp.getCurrency())
+                        .regularPrice(pp.getRegularPrice())
+                        .discountPrice(pp.getDiscountPrice())
+                        .build())
+                .toList();
+    }
+
     public ProductResponse toResponse(Product product) {
         return toResponse(product, ProductSearchMeta.EMPTY);
     }
@@ -55,6 +67,7 @@ public class ProductMapper {
                 .description(product.getDescription())
                 .price(product.getPrice())
                 .discountPrice(product.getDiscountPrice())
+                .prices(toPriceResponses(product.getPrices()))
                 .fabric(product.getFabric())
                 .careInstructions(product.getCareInstructions())
                 .hsnCode(product.getHsnCode())

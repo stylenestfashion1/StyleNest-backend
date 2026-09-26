@@ -3,6 +3,7 @@ package com.stylenest.stylenest_backend.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -38,6 +39,7 @@ import com.stylenest.stylenest_backend.entity.Product;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.Shipment;
 import com.stylenest.stylenest_backend.entity.User;
+import com.stylenest.stylenest_backend.enums.Currency;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
@@ -45,6 +47,7 @@ import com.stylenest.stylenest_backend.enums.Size;
 import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.exception.InsufficientStockException;
 import com.stylenest.stylenest_backend.exception.PendingPaymentExistsException;
+import com.stylenest.stylenest_backend.exception.UnsupportedPaymentCurrencyException;
 import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.AddressRepository;
 import com.stylenest.stylenest_backend.repository.CartRepository;
@@ -57,6 +60,7 @@ import com.stylenest.stylenest_backend.repository.UserRepository;
 import com.stylenest.stylenest_backend.service.EmailService;
 import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
+import com.stylenest.stylenest_backend.service.ProductPricingService;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceImplTest {
@@ -94,6 +98,9 @@ class OrderServiceImplTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private ProductPricingService productPricingService;
+
     private OrderMapper orderMapper;
 
     private OrderServiceImpl orderService;
@@ -111,7 +118,8 @@ class OrderServiceImplTest {
         orderService = new OrderServiceImpl(
                 userRepository, productVariantRepository, cartRepository,
                 addressRepository, orderRepository, shipmentRepository,
-                shipmentHistoryRepository, orderMapper, invoiceService, invoiceGenerationService, emailService);
+                shipmentHistoryRepository, orderMapper, invoiceService, invoiceGenerationService, emailService,
+                productPricingService);
 
         user = User.builder().id(1L).email("customer@example.com").fullName("Customer").build();
 
@@ -146,6 +154,17 @@ class OrderServiceImplTest {
                 .build();
 
         cart = Cart.builder().id(1L).user(user).items(new ArrayList<>(List.of(cartItem))).build();
+
+        // Guests have no cart-item price snapshot to reuse, so
+        // linesFromGuestRequest resolves fresh through this service --
+        // mirror the real INR rule (discountPrice-else-price) here rather
+        // than hardcoding a single stubbed value, since some tests change
+        // the product's discountPrice after setUp.
+        lenient().when(productPricingService.resolvePrice(any(Product.class), eq(Currency.INR)))
+                .thenAnswer(inv -> {
+                    Product p = inv.getArgument(0);
+                    return Optional.of(new ProductPricingService.ResolvedPrice(p.getPrice(), p.getDiscountPrice()));
+                });
     }
 
     @AfterEach
@@ -231,6 +250,42 @@ class OrderServiceImplTest {
 
         assertThat(cart.getItems()).isNotEmpty();
         verify(cartRepository, never()).save(any());
+    }
+
+    @Test
+    void placeOrder_usdCart_blockedBeforeAnyPersistence() {
+
+        cart.setCurrency(Currency.USD);
+
+        when(cartRepository.findByUser(user)).thenReturn(Optional.of(cart));
+        when(addressRepository.findByUserAndIsDefaultTrue(user)).thenReturn(Optional.of(address));
+
+        OrderRequest request = OrderRequest.builder().paymentMethod(PaymentMethod.COD).build();
+
+        assertThatThrownBy(() -> orderService.placeOrder(request))
+                .isInstanceOf(UnsupportedPaymentCurrencyException.class);
+
+        // Blocked before any stock decrement, Order row, or Easebuzz contact.
+        verify(orderRepository, never()).save(any());
+        verify(productVariantRepository, never()).save(any());
+        assertThat(variant.getStock()).isEqualTo(5); // untouched
+    }
+
+    @Test
+    void reserveOrderForOnlinePayment_usdCart_blockedBeforeAnyPersistence() {
+
+        cart.setCurrency(Currency.USD);
+
+        when(cartRepository.findByUser(user)).thenReturn(Optional.of(cart));
+        when(addressRepository.findByUserAndIsDefaultTrue(user)).thenReturn(Optional.of(address));
+        when(orderRepository.findByUserAndOrderStatusAndPaymentMethodNot(user, OrderStatus.PENDING, PaymentMethod.COD))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> orderService.reserveOrderForOnlinePayment(PaymentMethod.CARD))
+                .isInstanceOf(UnsupportedPaymentCurrencyException.class);
+
+        verify(orderRepository, never()).save(any());
+        verify(productVariantRepository, never()).save(any());
     }
 
     @Test
@@ -441,7 +496,39 @@ class OrderServiceImplTest {
                         .productVariantId(1L)
                         .quantity(2)
                         .build()))
+                .currency(Currency.INR)
                 .build();
+    }
+
+    @Test
+    void placeGuestOrder_usdCurrency_blockedBeforeAnyPersistence() {
+
+        when(productVariantRepository.findById(1L)).thenReturn(Optional.of(variant));
+        lenient().when(productPricingService.resolvePrice(any(Product.class), eq(Currency.USD)))
+                .thenReturn(Optional.of(new ProductPricingService.ResolvedPrice(new BigDecimal("69.00"), null)));
+
+        GuestOrderRequest request = GuestOrderRequest.builder()
+                .guestEmail("guest@example.com")
+                .paymentMethod(PaymentMethod.COD)
+                .shippingAddress(GuestShippingAddressRequest.builder()
+                        .fullName("Guest Customer")
+                        .phone("9998887777")
+                        .addressLine1("123 Guest St")
+                        .city("Metropolis")
+                        .state("State")
+                        .postalCode("100001")
+                        .country("India")
+                        .build())
+                .items(List.of(GuestOrderItemRequest.builder().productVariantId(1L).quantity(2).build()))
+                .currency(Currency.USD)
+                .build();
+
+        assertThatThrownBy(() -> orderService.placeGuestOrder(request))
+                .isInstanceOf(UnsupportedPaymentCurrencyException.class);
+
+        verify(orderRepository, never()).save(any());
+        verify(productVariantRepository, never()).save(any());
+        assertThat(variant.getStock()).isEqualTo(5); // untouched
     }
 
     @Test

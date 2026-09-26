@@ -16,6 +16,7 @@ import com.stylenest.stylenest_backend.dto.payment.EasebuzzInitiateResponse;
 import com.stylenest.stylenest_backend.dto.payment.GuestPaymentInitiateRequest;
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.User;
+import com.stylenest.stylenest_backend.enums.Currency;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
 import com.stylenest.stylenest_backend.exception.BadRequestException;
@@ -85,11 +86,17 @@ public class PaymentServiceImpl implements PaymentService {
 
         validateMethodSpecificFields(method, request.getUpiVa(), request.getBankCode());
 
+        // This endpoint only ever reaches Easebuzz, which is structurally
+        // India/INR-only (no currency parameter exists in its API) -- so
+        // this reservation is always INR, regardless of what currency the
+        // guest may have been browsing in. USD guest checkout has no
+        // online-payment endpoint yet (blocked until Razorpay lands).
         GuestOrderRequest orderRequest = GuestOrderRequest.builder()
                 .guestEmail(request.getGuestEmail())
                 .shippingAddress(request.getShippingAddress())
                 .paymentMethod(method)
                 .items(request.getItems())
+                .currency(Currency.INR)
                 .build();
 
         Order order = orderService.reserveGuestOrderForOnlinePayment(orderRequest);

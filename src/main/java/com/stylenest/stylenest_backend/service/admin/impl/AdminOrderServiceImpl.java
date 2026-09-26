@@ -85,6 +85,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         return AdminOrderSummaryResponse.builder()
                 .id(order.getId())
                 .orderNumber(order.getOrderNumber())
+                .currency(order.getCurrency())
                 .totalAmount(order.getTotalAmount())
                 .orderStatus(order.getOrderStatus())
                 .paymentMethod(order.getPaymentMethod())

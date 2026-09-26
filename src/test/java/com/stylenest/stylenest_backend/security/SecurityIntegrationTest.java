@@ -375,6 +375,7 @@ class SecurityIntegrationTest {
                                 {
                                   "guestEmail": "invoice-owner@example.com",
                                   "paymentMethod": "COD",
+                                  "currency": "INR",
                                   "shippingAddress": {
                                     "fullName": "Invoice Owner", "phone": "9990001111",
                                     "addressLine1": "1 Owner Rd", "city": "Ownerville",

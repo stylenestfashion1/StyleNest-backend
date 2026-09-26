@@ -110,6 +110,7 @@ class AdminOrderManagementIntegrationTest {
                 {
                   "guestEmail": "%s",
                   "paymentMethod": "COD",
+                  "currency": "INR",
                   "shippingAddress": {
                     "fullName": "Search Guest", "phone": "9991112222",
                     "addressLine1": "1 Search Rd", "city": "Searchville",

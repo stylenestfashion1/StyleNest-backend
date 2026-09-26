@@ -68,6 +68,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                         .customerName(order.getUser() != null
                                 ? order.getUser().getFullName()
                                 : order.getShippingFullName())
+                        .currency(order.getCurrency())
                         .totalAmount(order.getTotalAmount())
                         .orderStatus(order.getOrderStatus().name())
                         .createdAt(order.getCreatedAt())

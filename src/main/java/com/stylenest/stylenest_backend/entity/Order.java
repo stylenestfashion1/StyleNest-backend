@@ -8,6 +8,7 @@ import java.util.List;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.stylenest.stylenest_backend.enums.Currency;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
@@ -81,6 +82,16 @@ public class Order {
 
     @Column(nullable = false)
     private BigDecimal totalAmount;
+
+    // The single authoritative currency this order was placed and paid in --
+    // set once at order-creation time (see OrderServiceImpl), never changed
+    // afterward. Nullable only because historical orders predate this column;
+    // PricingBackfillRunner backfills every existing row to INR (all of
+    // which were verified to actually be India/INR orders before doing so).
+    // Every new order always has this set.
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private Currency currency;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

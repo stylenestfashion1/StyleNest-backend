@@ -29,6 +29,7 @@ import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.Shipment;
 import com.stylenest.stylenest_backend.entity.ShipmentHistory;
 import com.stylenest.stylenest_backend.entity.User;
+import com.stylenest.stylenest_backend.enums.Currency;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
@@ -38,6 +39,7 @@ import com.stylenest.stylenest_backend.exception.InsufficientStockException;
 import com.stylenest.stylenest_backend.exception.PendingPaymentExistsException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
 import com.stylenest.stylenest_backend.exception.UnauthorizedAccessException;
+import com.stylenest.stylenest_backend.exception.UnsupportedPaymentCurrencyException;
 import com.stylenest.stylenest_backend.mapper.OrderMapper;
 import com.stylenest.stylenest_backend.repository.AddressRepository;
 import com.stylenest.stylenest_backend.repository.CartRepository;
@@ -50,6 +52,7 @@ import com.stylenest.stylenest_backend.service.EmailService;
 import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 import com.stylenest.stylenest_backend.service.OrderService;
+import com.stylenest.stylenest_backend.service.ProductPricingService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -69,6 +72,7 @@ public class OrderServiceImpl implements OrderService {
     private final InvoiceService invoiceService;
     private final InvoiceGenerationService invoiceGenerationService;
     private final EmailService emailService;
+    private final ProductPricingService productPricingService;
 
     private User getCurrentUser() {
 
@@ -116,7 +120,7 @@ public class OrderServiceImpl implements OrderService {
 
         Order order = reserveOrder(
                 user, null, address, ShippingSnapshot.fromAddress(address),
-                linesFromCart(cart), PaymentMethod.COD);
+                linesFromCart(cart), PaymentMethod.COD, cart.getCurrency());
 
         cart.getItems().clear();
         cart.setTotalPrice(BigDecimal.ZERO);
@@ -164,7 +168,7 @@ public class OrderServiceImpl implements OrderService {
 
         Address address = getDefaultAddress(user);
 
-        return reserveOrder(user, null, address, ShippingSnapshot.fromAddress(address), lines, paymentMethod);
+        return reserveOrder(user, null, address, ShippingSnapshot.fromAddress(address), lines, paymentMethod, cart.getCurrency());
     }
 
     @Override
@@ -218,11 +222,12 @@ public class OrderServiceImpl implements OrderService {
 
         validateGuestShippingAddress(request.getShippingAddress());
 
-        List<ReservationLine> lines = linesFromGuestRequest(request.getItems());
+        List<ReservationLine> lines = linesFromGuestRequest(request.getItems(), request.getCurrency());
 
         ShippingSnapshot snapshot = ShippingSnapshot.fromGuestRequest(request.getShippingAddress());
 
-        Order order = reserveOrder(null, request.getGuestEmail(), null, snapshot, lines, PaymentMethod.COD);
+        Order order = reserveOrder(
+                null, request.getGuestEmail(), null, snapshot, lines, PaymentMethod.COD, request.getCurrency());
 
         sendConfirmationEmailIfNeeded(order);
 
@@ -238,7 +243,7 @@ public class OrderServiceImpl implements OrderService {
 
         validateGuestShippingAddress(request.getShippingAddress());
 
-        List<ReservationLine> lines = linesFromGuestRequest(request.getItems());
+        List<ReservationLine> lines = linesFromGuestRequest(request.getItems(), request.getCurrency());
 
         List<Order> inProgress = orderRepository
                 .findByGuestEmailAndOrderStatusAndPaymentMethodNot(
@@ -261,7 +266,9 @@ public class OrderServiceImpl implements OrderService {
 
         ShippingSnapshot snapshot = ShippingSnapshot.fromGuestRequest(request.getShippingAddress());
 
-        return reserveOrder(null, request.getGuestEmail(), null, snapshot, lines, request.getPaymentMethod());
+        return reserveOrder(
+                null, request.getGuestEmail(), null, snapshot, lines,
+                request.getPaymentMethod(), request.getCurrency());
     }
 
     private Cart getNonEmptyCart(User user) {
@@ -318,7 +325,7 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private List<ReservationLine> linesFromGuestRequest(List<GuestOrderItemRequest> items) {
+    private List<ReservationLine> linesFromGuestRequest(List<GuestOrderItemRequest> items, Currency currency) {
 
         return items.stream()
                 .map(item -> {
@@ -326,12 +333,14 @@ public class OrderServiceImpl implements OrderService {
                     ProductVariant variant = productVariantRepository.findById(item.getProductVariantId())
                             .orElseThrow(() -> new ResourceNotFoundException("Product Variant not found."));
 
-                    // Same discount-price-else-price rule CartServiceImpl.addToCart
-                    // already uses -- relocated here for guests, who have no
-                    // pre-existing cart-item price snapshot to reuse.
-                    BigDecimal price = variant.getProduct().getDiscountPrice() != null
-                            ? variant.getProduct().getDiscountPrice()
-                            : variant.getProduct().getPrice();
+                    // Guests have no server-side cart to snapshot a price
+                    // from, so it's resolved fresh here, same as
+                    // CartServiceImpl.addToCart does for registered carts.
+                    BigDecimal price = productPricingService
+                            .resolvePrice(variant.getProduct(), currency)
+                            .orElseThrow(() -> new BadRequestException(
+                                    "This product is not available in " + currency + " yet."))
+                            .effectivePrice();
 
                     return new ReservationLine(item.getProductVariantId(), item.getQuantity(), price);
                 })
@@ -373,10 +382,23 @@ public class OrderServiceImpl implements OrderService {
      * initial Shipment immediately for COD (fulfillment is guaranteed);
      * online-payment shipments are created only once payment is verified
      * (see markOnlinePaymentPaid).
+     *
+     * All four public entry points (registered COD/online, guest COD/online)
+     * converge here, which is why the USD block below -- thrown before any
+     * Order row is persisted or stock is touched, and before Easebuzz can
+     * ever be contacted -- covers every checkout path uniformly. Remove
+     * this guard only once Razorpay is actually integrated for USD.
      */
     private Order reserveOrder(
             User user, String guestEmail, Address liveAddress,
-            ShippingSnapshot snapshot, List<ReservationLine> lines, PaymentMethod paymentMethod) {
+            ShippingSnapshot snapshot, List<ReservationLine> lines, PaymentMethod paymentMethod,
+            Currency currency) {
+
+        if (currency == Currency.USD) {
+            throw new UnsupportedPaymentCurrencyException(
+                    "International online payments will be available soon. "
+                            + "Please try again once international payment support is enabled.");
+        }
 
         BigDecimal totalAmount = BigDecimal.ZERO;
 
@@ -398,6 +420,7 @@ public class OrderServiceImpl implements OrderService {
                 .paymentMethod(paymentMethod)
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderStatus(OrderStatus.PENDING)
+                .currency(currency)
                 .build();
 
         for (ReservationLine line : lines) {

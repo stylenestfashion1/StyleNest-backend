@@ -31,6 +31,7 @@ import com.stylenest.stylenest_backend.repository.ProductRepository;
 import com.stylenest.stylenest_backend.repository.WishlistItemRepository;
 import com.stylenest.stylenest_backend.repository.projection.ProductSearchMetaProjection;
 import com.stylenest.stylenest_backend.service.ImageStorageService;
+import com.stylenest.stylenest_backend.service.ProductPricingService;
 import com.stylenest.stylenest_backend.service.ProductThumbnailResolver;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,6 +57,9 @@ class ProductServiceImplTest {
 
     @Mock
     private ImageStorageService imageStorageService;
+
+    @Mock
+    private ProductPricingService productPricingService;
 
     private ProductServiceImpl productService;
 
@@ -98,7 +102,7 @@ class ProductServiceImplTest {
                 productRepository, categoryRepository, productMapper,
                 new ProductThumbnailResolver(productRepository),
                 orderItemRepository, cartItemRepository, wishlistItemRepository,
-                productImageRepository, imageStorageService);
+                productImageRepository, imageStorageService, productPricingService);
     }
 
     @Test

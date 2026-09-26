@@ -85,6 +85,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         return CheckoutResponse.builder()
                 .items(items)
                 .shippingAddress(addressResponse)
+                .currency(cart.get().getCurrency())
                 .totalAmount(cart.get().getTotalPrice())
                 .build();
     }

@@ -14,6 +14,7 @@ import com.stylenest.stylenest_backend.entity.Cart;
 import com.stylenest.stylenest_backend.entity.CartItem;
 import com.stylenest.stylenest_backend.entity.ProductVariant;
 import com.stylenest.stylenest_backend.entity.User;
+import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.exception.InsufficientStockException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
 import com.stylenest.stylenest_backend.mapper.CartMapper;
@@ -22,6 +23,8 @@ import com.stylenest.stylenest_backend.repository.CartRepository;
 import com.stylenest.stylenest_backend.repository.ProductVariantRepository;
 import com.stylenest.stylenest_backend.repository.UserRepository;
 import com.stylenest.stylenest_backend.service.CartService;
+import com.stylenest.stylenest_backend.service.ProductPricingService;
+import com.stylenest.stylenest_backend.service.ProductPricingService.ResolvedPrice;
 
 import lombok.RequiredArgsConstructor;
 
@@ -35,6 +38,7 @@ public class CartServiceImpl implements CartService {
 	private final ProductVariantRepository productVariantRepository;
 	private final UserRepository userRepository;
 	private final CartMapper cartMapper;
+	private final ProductPricingService productPricingService;
 
 	private User getCurrentUser() {
 
@@ -72,6 +76,20 @@ public class CartServiceImpl implements CartService {
 			throw new InsufficientStockException("Insufficient stock available.");
 		}
 
+		// A cart is locked to a single currency once it has any items --
+		// the customer must clear it to switch (enforced here, not just
+		// hidden behind the frontend's currency-switch UI).
+		if (cart.getCurrency() != null && cart.getCurrency() != request.getCurrency()) {
+			throw new BadRequestException(
+					"Your cart is currently in " + cart.getCurrency()
+							+ ". Clear your cart before adding items in " + request.getCurrency() + ".");
+		}
+
+		ResolvedPrice resolvedPrice = productPricingService
+				.resolvePrice(variant.getProduct(), request.getCurrency())
+				.orElseThrow(() -> new BadRequestException(
+						"This product is not available in " + request.getCurrency() + " yet."));
+
 		CartItem cartItem = cartItemRepository.findByCartAndProductVariant(cart, variant).orElse(null);
 
 		if (cartItem != null) {
@@ -89,14 +107,15 @@ public class CartServiceImpl implements CartService {
 		} else {
 
 			CartItem newItem = CartItem.builder().cart(cart).productVariant(variant).quantity(request.getQuantity())
-					.price(variant.getProduct().getDiscountPrice() != null ? variant.getProduct().getDiscountPrice()
-							: variant.getProduct().getPrice())
+					.price(resolvedPrice.effectivePrice())
 					.build();
 
 			cartItemRepository.save(newItem);
 
 			cart.getItems().add(newItem);
 		}
+
+		cart.setCurrency(request.getCurrency());
 
 		updateCartTotal(cart);
 
@@ -172,6 +191,13 @@ public class CartServiceImpl implements CartService {
 
 		cartItemRepository.delete(cartItem);
 
+		// An empty cart has no currency lock -- same invariant as
+		// clearCart(), so removing the last item the same way frees the
+		// customer to add their next item in any currency.
+		if (cart.getItems().isEmpty()) {
+			cart.setCurrency(null);
+		}
+
 		updateCartTotal(cart);
 
 		cartRepository.save(cart);
@@ -187,6 +213,7 @@ public class CartServiceImpl implements CartService {
 		cart.getItems().clear();
 
 		cart.setTotalPrice(BigDecimal.ZERO);
+		cart.setCurrency(null);
 
 		cartRepository.save(cart);
 	}

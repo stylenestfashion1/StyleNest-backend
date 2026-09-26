@@ -28,6 +28,11 @@ public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecific
     List<Order> findByUserAndOrderStatusAndPaymentMethodNot(User user, OrderStatus orderStatus, PaymentMethod paymentMethod);
     List<Order> findByGuestEmailAndOrderStatusAndPaymentMethodNot(String guestEmail, OrderStatus orderStatus, PaymentMethod paymentMethod);
 
+    // Historical orders predate the currency column -- see
+    // PricingBackfillRunner, which backfills every one of these to INR
+    // (verified: every order ever placed shipped to India).
+    List<Order> findByCurrencyIsNull();
+
       @Query("""
     		SELECT COALESCE(SUM(o.totalAmount), 0)
     		FROM Order o

@@ -13,11 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.stylenest.stylenest_backend.dto.product.ProductJeansCodeResponse;
+import com.stylenest.stylenest_backend.dto.product.ProductPriceRequest;
 import com.stylenest.stylenest_backend.dto.product.ProductRequest;
 import com.stylenest.stylenest_backend.dto.product.ProductResponse;
 import com.stylenest.stylenest_backend.dto.product.filter.ProductFilterRequest;
 import com.stylenest.stylenest_backend.entity.Category;
 import com.stylenest.stylenest_backend.entity.Product;
+import com.stylenest.stylenest_backend.enums.Currency;
+import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.exception.DuplicateResourceException;
 import com.stylenest.stylenest_backend.exception.ProductHasOrderHistoryException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
@@ -30,6 +33,7 @@ import com.stylenest.stylenest_backend.repository.ProductImageRepository;
 import com.stylenest.stylenest_backend.repository.ProductRepository;
 import com.stylenest.stylenest_backend.repository.WishlistItemRepository;
 import com.stylenest.stylenest_backend.service.ImageStorageService;
+import com.stylenest.stylenest_backend.service.ProductPricingService;
 import com.stylenest.stylenest_backend.service.ProductSearchMeta;
 import com.stylenest.stylenest_backend.service.ProductService;
 import com.stylenest.stylenest_backend.service.ProductThumbnailResolver;
@@ -52,6 +56,7 @@ public class ProductServiceImpl implements ProductService {
     private final WishlistItemRepository wishlistItemRepository;
     private final ProductImageRepository productImageRepository;
     private final ImageStorageService imageStorageService;
+    private final ProductPricingService productPricingService;
 
     @Override
     @Transactional
@@ -82,6 +87,8 @@ public class ProductServiceImpl implements ProductService {
         product.setSku(SkuGenerator.productPrefix(request.getName(), existingPrefixes));
 
         Product savedProduct = productRepository.save(product);
+
+        syncPricing(savedProduct, request);
 
         return productMapper.toResponse(savedProduct);
     }
@@ -148,7 +155,50 @@ public class ProductServiceImpl implements ProductService {
 
         Product updatedProduct = productRepository.save(product);
 
+        syncPricing(updatedProduct, request);
+
         return productMapper.toResponse(updatedProduct);
+    }
+
+    // Runs in the same transaction as the Product save above (both
+    // createProduct/updateProduct are already @Transactional), so
+    // Product.price/discountPrice and their ProductPrice(INR) mirror can
+    // never diverge from a partial write -- there is exactly one commit.
+    //
+    // INR: always mirrored from the fields the admin just saved on Product
+    // itself -- this is the only write path for INR pricing.
+    //
+    // USD: independent of INR entirely.
+    //   - clearInternationalPricing=true -> remove any existing USD row.
+    //   - internationalPrice present     -> upsert it (validated below).
+    //   - internationalPrice absent      -> leave whatever USD pricing
+    //     already exists completely untouched (never wiped by omission).
+    private void syncPricing(Product product, ProductRequest request) {
+
+        productPricingService.upsertPrice(
+                product, Currency.INR, product.getPrice(), product.getDiscountPrice());
+
+        if (Boolean.TRUE.equals(request.getClearInternationalPricing())) {
+
+            productPricingService.clearPrice(product, Currency.USD);
+            return;
+        }
+
+        ProductPriceRequest international = request.getInternationalPrice();
+
+        if (international == null) {
+            return;
+        }
+
+        if (international.getDiscountPrice() != null
+                && international.getDiscountPrice().compareTo(international.getRegularPrice()) >= 0) {
+
+            throw new BadRequestException(
+                    "International sale price must be lower than the international regular price.");
+        }
+
+        productPricingService.upsertPrice(
+                product, Currency.USD, international.getRegularPrice(), international.getDiscountPrice());
     }
 
     @Override

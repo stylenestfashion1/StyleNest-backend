@@ -2,6 +2,7 @@ package com.stylenest.stylenest_backend.dto.product;
 
 import java.math.BigDecimal;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -27,6 +28,23 @@ public class ProductRequest {
     private BigDecimal price;
 
     private BigDecimal discountPrice;
+
+    // International (USD) pricing -- completely independent of price/
+    // discountPrice above, never derived from them. Omitted entirely ->
+    // any existing international pricing is left exactly as it was (never
+    // wiped by omission). Present -> upserted as this product's USD price.
+    // See ProductServiceImpl.syncInternationalPrice.
+    @Valid
+    private ProductPriceRequest internationalPrice;
+
+    // Explicit "clear international pricing" signal, distinct from simply
+    // omitting internationalPrice above -- the admin form sends this only
+    // when the "Enable international pricing" checkbox was unchecked on a
+    // product that previously had a USD price, so removal is always a
+    // deliberate action, never an accidental side effect of leaving a field
+    // out of the request body.
+    @Builder.Default
+    private Boolean clearInternationalPricing = false;
 
     private String fabric;
 

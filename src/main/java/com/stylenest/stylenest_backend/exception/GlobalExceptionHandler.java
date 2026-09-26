@@ -207,6 +207,20 @@ public class GlobalExceptionHandler {
                 null);
     }
 
+    // International (USD) Payment Not Yet Available -- Razorpay isn't
+    // integrated yet; blocked before any Order row is persisted or
+    // Easebuzz is contacted. See OrderServiceImpl.reserveOrder.
+
+    @ExceptionHandler(UnsupportedPaymentCurrencyException.class)
+    public ResponseEntity<ApiResponse<Object>> handleUnsupportedPaymentCurrency(
+            UnsupportedPaymentCurrencyException ex) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage(),
+                null);
+    }
+
     // Payment Gateway Failure (Easebuzz network/API error -- never leak the
     // raw gateway response, which may contain internal details)
 

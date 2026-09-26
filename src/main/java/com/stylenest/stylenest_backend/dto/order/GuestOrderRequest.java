@@ -2,6 +2,7 @@ package com.stylenest.stylenest_backend.dto.order;
 
 import java.util.List;
 
+import com.stylenest.stylenest_backend.enums.Currency;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 
 import jakarta.validation.Valid;
@@ -32,4 +33,10 @@ public class GuestOrderRequest {
     @NotEmpty(message = "At least one item is required")
     @Valid
     private List<GuestOrderItemRequest> items;
+
+    // Guest checkout has no server-side cart to read currency from, so it
+    // must travel with the request. Every item's price is resolved fresh
+    // server-side for this currency -- see OrderServiceImpl.linesFromGuestRequest.
+    @NotNull(message = "Currency is required")
+    private Currency currency;
 }

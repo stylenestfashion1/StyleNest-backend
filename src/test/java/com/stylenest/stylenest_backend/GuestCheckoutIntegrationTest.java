@@ -79,6 +79,7 @@ class GuestCheckoutIntegrationTest {
                 {
                   "guestEmail": "guest@example.com",
                   "paymentMethod": "COD",
+                  "currency": "INR",
                   "shippingAddress": {
                     "fullName": "Guest Customer",
                     "phone": "9998887777",
@@ -120,6 +121,7 @@ class GuestCheckoutIntegrationTest {
                 {
                   "guestEmail": "guest@example.com",
                   "paymentMethod": "COD",
+                  "currency": "INR",
                   "shippingAddress": {
                     "fullName": "Guest Customer", "phone": "9998887777",
                     "addressLine1": "123 Guest St", "city": "Metropolis",

@@ -29,9 +29,20 @@ public class ProductResponse {
 
     private String description;
 
+    @Schema(description = "The INR price -- kept for backward compatibility with existing "
+            + "consumers. Always equal to the INR entry in prices[] below.")
     private BigDecimal price;
 
+    @Schema(description = "The INR sale price -- kept for backward compatibility with existing "
+            + "consumers. Always equal to the INR entry in prices[] below.")
     private BigDecimal discountPrice;
+
+    @Schema(description = "Every currency this product currently has independent pricing in. "
+            + "INR is always present. USD is present only if the admin has configured it -- "
+            + "its absence means international pricing is not yet available for this product, "
+            + "not that it should fall back to the INR price.")
+    @Builder.Default
+    private List<ProductPriceResponse> prices = new java.util.ArrayList<>();
 
     private String fabric;
 
