@@ -197,7 +197,6 @@ class ProductVariantServiceImplTest {
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(variantRepository.findByProductAndColor(product, "BLACK")).thenReturn(blackGroup);
         when(variantRepository.existsByProductAndColor(product, "BABY PINK")).thenReturn(false);
-        when(variantRepository.findByProduct(product)).thenReturn(blackGroup);
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BLACK")).thenReturn(List.of());
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BABY PINK")).thenReturn(List.of());
         when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -212,7 +211,87 @@ class ProductVariantServiceImplTest {
         assertThat(response).extracting(ProductVariantResponse::getSize)
                 .containsExactlyInAnyOrder(Size.S, Size.M, Size.XL);
         assertThat(response).extracting(ProductVariantResponse::getStock).containsOnly(40);
-        assertThat(response).allSatisfy(v -> assertThat(v.getSku()).startsWith("STN-UGT-").endsWith("-" + v.getSize().name()));
+        // SKU is byte-for-byte the original BLACK sku -- a color rename must never mint a new
+        // one, since an existing SKU may already be referenced by orders/invoices/shipments.
+        assertThat(response).extracting(ProductVariantResponse::getSku)
+                .containsExactlyInAnyOrder("STN-UGT-BLA-S", "STN-UGT-BLA-M", "STN-UGT-BLA-XL");
+    }
+
+    @Test
+    void renameColorGroup_neverRegeneratesSku_evenAcrossManyDistinctRenames() {
+
+        newService();
+
+        Product product = product(1L, "UGT");
+        ProductVariant navy = variant(10L, product, "NAVY", Size.M, 40, "STN-UGT-NAV-M");
+
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(variantRepository.findByProductAndColor(product, "NAVY")).thenReturn(List.of(navy));
+        when(variantRepository.existsByProductAndColor(product, "DARK BLUE")).thenReturn(false);
+        when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "NAVY")).thenReturn(List.of());
+        when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "DARK BLUE")).thenReturn(List.of());
+        when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(imageRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<ProductVariantResponse> response = variantService.renameColorGroup(
+                1L, "NAVY", RenameColorGroupRequest.builder().newColor("Dark Blue").newColorHex("#2c4870").build());
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getColor()).isEqualTo("DARK BLUE");
+        assertThat(response.get(0).getColorHex()).isEqualTo("#2c4870");
+        assertThat(response.get(0).getSku()).isEqualTo("STN-UGT-NAV-M");
+        // findByProduct (used only by the old SKU-regeneration path) must never be called now.
+        verify(variantRepository, never()).findByProduct(any());
+    }
+
+    @Test
+    void renameColorGroup_sameNameAndHex_isNoOp_doesNotWriteToDatabase() {
+
+        newService();
+
+        Product product = product(1L, "UGT");
+        ProductVariant navy = ProductVariant.builder()
+                .id(10L).product(product).color("NAVY").colorHex("#263349").size(Size.M).stock(40)
+                .sku("STN-UGT-NAV-M").build();
+
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(variantRepository.findByProductAndColor(product, "NAVY")).thenReturn(List.of(navy));
+        when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "NAVY")).thenReturn(List.of());
+
+        List<ProductVariantResponse> response = variantService.renameColorGroup(
+                1L, "NAVY", RenameColorGroupRequest.builder().newColor("NAVY").newColorHex("#263349").build());
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getColor()).isEqualTo("NAVY");
+        assertThat(response.get(0).getColorHex()).isEqualTo("#263349");
+        // No DB write at all for a genuine no-op save.
+        verify(variantRepository, never()).saveAll(any());
+        verify(imageRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void renameColorGroup_sameNameDifferentHex_isNotANoOp_updatesShade() {
+
+        newService();
+
+        Product product = product(1L, "UGT");
+        ProductVariant navy = ProductVariant.builder()
+                .id(10L).product(product).color("NAVY").colorHex("#263349").size(Size.M).stock(40)
+                .sku("STN-UGT-NAV-M").build();
+
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(variantRepository.findByProductAndColor(product, "NAVY")).thenReturn(List.of(navy));
+        when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "NAVY")).thenReturn(List.of());
+        when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<ProductVariantResponse> response = variantService.renameColorGroup(
+                1L, "NAVY", RenameColorGroupRequest.builder().newColor("NAVY").newColorHex("#123456").build());
+
+        assertThat(response.get(0).getColorHex()).isEqualTo("#123456");
+        assertThat(response.get(0).getSku()).isEqualTo("STN-UGT-NAV-M");
+        verify(variantRepository).saveAll(any());
+        // A same-name save never touches images -- only an actual rename moves them.
+        verify(imageRepository, never()).saveAll(any());
     }
 
     @Test
@@ -229,7 +308,6 @@ class ProductVariantServiceImplTest {
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(variantRepository.findByProductAndColor(product, "BLUE")).thenReturn(blueGroup);
         when(variantRepository.existsByProductAndColor(product, "NAVY BLUE")).thenReturn(false);
-        when(variantRepository.findByProduct(product)).thenReturn(blueGroup);
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BLUE")).thenReturn(List.of());
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "NAVY BLUE")).thenReturn(List.of());
         when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -254,7 +332,6 @@ class ProductVariantServiceImplTest {
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(variantRepository.findByProductAndColor(product, "BLACK")).thenReturn(List.of(black));
         when(variantRepository.existsByProductAndColor(product, "BABY PINK")).thenReturn(false);
-        when(variantRepository.findByProduct(product)).thenReturn(List.of(black, blue));
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BLACK")).thenReturn(List.of());
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BABY PINK")).thenReturn(List.of());
         when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -304,7 +381,6 @@ class ProductVariantServiceImplTest {
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(variantRepository.findByProductAndColor(product, "BLACK")).thenReturn(List.of(black));
         when(variantRepository.existsByProductAndColor(product, "BABY PINK")).thenReturn(false);
-        when(variantRepository.findByProduct(product)).thenReturn(List.of(black));
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BLACK")).thenReturn(List.of(blackImage));
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BABY PINK")).thenReturn(List.of(blackImage));
         when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -329,7 +405,6 @@ class ProductVariantServiceImplTest {
         when(productRepository.findById(1L)).thenReturn(Optional.of(product));
         when(variantRepository.findByProductAndColor(product, "BLACK")).thenReturn(List.of(black));
         when(variantRepository.existsByProductAndColor(product, "DUSTY BROWN")).thenReturn(false);
-        when(variantRepository.findByProduct(product)).thenReturn(List.of(black));
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "BLACK")).thenReturn(List.of());
         when(imageRepository.findByProductIdAndColorOrderByDisplayOrderAsc(1L, "DUSTY BROWN")).thenReturn(List.of());
         when(variantRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));

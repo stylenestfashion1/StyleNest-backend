@@ -174,24 +174,25 @@ public class ProductVariantServiceImpl implements ProductVariantService {
                     "\"" + request.getNewColor() + "\" already exists for this product.");
         }
 
-        // One shared color code for the whole group -- every size gets the same new code, kept
-        // distinct from every OTHER color currently on this product (the group being renamed is
-        // excluded from that comparison set since its own rows are the ones changing).
-        String newColorCode = isActualRename
-                ? generateColorCodeForRename(product, normalizedNew, normalizedCurrent)
-                : null;
+        // Nothing would actually change (same name, and either no shade supplied or the supplied
+        // shade already matches every variant's stored shade) -- skip the write entirely instead
+        // of performing a pointless update and reporting a misleading "updated" result.
+        if (!isActualRename && !anyColorHexChange(group, request.getNewColorHex())) {
+            List<ProductImageResponse> unchangedImages = imagesFor(productId, normalizedCurrent);
+            return group.stream()
+                    .map(variant -> variantMapper.toResponse(variant, unchangedImages))
+                    .toList();
+        }
 
-        String prefix = product.getSku() != null ? product.getSku() : "PRD";
-
-        Set<String> skusAssignedThisBatch = new HashSet<>();
         for (ProductVariant variant : group) {
             variant.setColor(normalizedNew);
             if (request.getNewColorHex() != null) {
                 variant.setColorHex(request.getNewColorHex());
             }
-            if (isActualRename) {
-                variant.setSku(uniqueSkuFor(prefix, newColorCode, variant.getSize(), skusAssignedThisBatch));
-            }
+            // SKU is intentionally never touched here -- an existing SKU may already be
+            // referenced by orders, invoices, shipments or reports, so it must stay stable
+            // across a color rename. SKUs are only ever minted once, at variant creation (see
+            // generateVariantSku below); renaming a color is a pure relabel, never a recreate.
         }
         variantRepository.saveAll(group);
 
@@ -214,49 +215,17 @@ public class ProductVariantServiceImpl implements ProductVariantService {
                 .toList();
     }
 
-    /**
-     * One fresh, collision-resistant color code for a rename target, considering every OTHER
-     * color currently on this product (not the group being renamed, whose old code is about to
-     * stop existing) plus a live existsBySku check per candidate size -- the same collision
-     * safety net as generateVariantSku, since a rename can just as easily land on an SKU some
-     * other color already owns.
-     */
-    private String generateColorCodeForRename(Product product, String newColor, String excludeColor) {
-
-        Map<String, String> otherColorCodesInUse = new HashMap<>();
-        for (ProductVariant existing : variantRepository.findByProduct(product)) {
-            if (existing.getSku() == null || existing.getColor().equals(excludeColor)) {
-                continue;
-            }
-            String[] parts = existing.getSku().split("-");
-            if (parts.length == 4) {
-                otherColorCodesInUse.putIfAbsent(existing.getColor(), parts[2]);
+    /** True if the requested shade would actually change at least one variant's stored colorHex. Null means "leave shade as-is", never a change by itself. */
+    private boolean anyColorHexChange(List<ProductVariant> group, String requestedHex) {
+        if (requestedHex == null) {
+            return false;
+        }
+        for (ProductVariant variant : group) {
+            if (!requestedHex.equalsIgnoreCase(variant.getColorHex())) {
+                return true;
             }
         }
-
-        return SkuGenerator.colorCode(newColor, new HashSet<>(otherColorCodesInUse.values()));
-    }
-
-    /**
-     * Builds "STN-{prefix}-{colorCode}-{sizeLabel}", verified unique against the database and
-     * against every SKU already assigned earlier in the same batch (mutated as a side effect).
-     * Falls back to alternate color codes on collision rather than ever risking a duplicate-key
-     * insert -- the same guarantee generateVariantSku makes for a single new variant.
-     */
-    private String uniqueSkuFor(String prefix, String colorCode, Size size, Set<String> skusAssignedThisBatch) {
-
-        String sku = "STN-" + prefix + "-" + colorCode + "-" + size.getSkuToken();
-
-        for (int attempt = 1; attempt < 1000; attempt++) {
-            if (!skusAssignedThisBatch.contains(sku) && !variantRepository.existsBySku(sku)) {
-                skusAssignedThisBatch.add(sku);
-                return sku;
-            }
-            String altCode = SkuGenerator.colorCode(colorCode + attempt, skusAssignedThisBatch);
-            sku = "STN-" + prefix + "-" + altCode + "-" + size.getSkuToken();
-        }
-
-        throw new IllegalStateException("Could not generate a unique SKU for prefix " + prefix);
+        return false;
     }
 
     private List<ProductImageResponse> imagesFor(Long productId, String color) {
