@@ -88,6 +88,25 @@ public class ProductController {
                         .build());
     }
 
+    // The canonical public product-detail lookup -- the frontend's
+    // /products/:slugOrId route resolves through this for anything that
+    // isn't a purely-numeric legacy ID (see SlugUtil.generateSlug, which
+    // guarantees a generated slug is never purely numeric, so there's no
+    // ambiguity with the {id} route above).
+    @GetMapping("/slug/{slug}")
+    public ResponseEntity<ApiResponse<ProductResponse>> getProductBySlug(
+            @PathVariable String slug) {
+
+        ProductResponse response = productService.getProductBySlug(slug);
+
+        return ResponseEntity.ok(
+                ApiResponse.<ProductResponse>builder()
+                        .success(true)
+                        .message("Product fetched successfully.")
+                        .data(response)
+                        .build());
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<ProductResponse>> updateProduct(
             @PathVariable Long id,

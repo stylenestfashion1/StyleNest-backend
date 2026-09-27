@@ -62,12 +62,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public ProductResponse createProduct(ProductRequest request) {
 
-        String slug = SlugUtil.generateSlug(request.getName());
-
-        if (productRepository.existsBySlug(slug)) {
-            throw new DuplicateResourceException(
-                    "Product with this name already exists.");
-        }
+        String slug = resolveSlugForCreate(request);
 
         Category category = categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() ->
@@ -123,6 +118,80 @@ public class ProductServiceImpl implements ProductService {
         return productMapper.toResponse(product, meta);
     }
 
+    // The public, canonical customer-facing lookup -- see ProductController
+    // GET /api/products/slug/{slug}. Everything internal (variants, cart,
+    // orders, admin) keeps using the numeric ID; only the public product
+    // page resolves by slug.
+    @Override
+    @Transactional(readOnly = true)
+    public ProductResponse getProductBySlug(String slug) {
+
+        Product product = productRepository.findBySlug(slug)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Product not found."));
+
+        ProductSearchMeta meta = thumbnailResolver.resolveMeta(List.of(product.getId()), null)
+                .getOrDefault(product.getId(), ProductSearchMeta.EMPTY);
+
+        return productMapper.toResponse(product, meta);
+    }
+
+    // Explicit slug (admin-typed) is normalized the same way an
+    // auto-generated one is, then rejected outright if it collides with
+    // another product -- never silently altered, since the admin chose it
+    // on purpose. Without one, a slug is derived from the name; a name
+    // collision auto-suffixes (-2, -3, ...) instead of blocking creation,
+    // since nothing here was ever meant to enforce unique product names --
+    // slug uniqueness was just the only mechanism available before this
+    // suffix strategy existed.
+    private String resolveSlugForCreate(ProductRequest request) {
+
+        if (hasExplicitSlug(request)) {
+
+            String normalized = SlugUtil.generateSlug(request.getSlug());
+
+            if (productRepository.existsBySlug(normalized)) {
+                throw new DuplicateResourceException(
+                        "This slug is already used by another product.");
+            }
+
+            return normalized;
+        }
+
+        String baseSlug = SlugUtil.generateSlug(request.getName());
+        return SlugUtil.uniqueSlug(baseSlug, productRepository::existsBySlug);
+    }
+
+    // Stable by default: the existing slug is never regenerated just
+    // because the product name changed (that would break bookmarks/shared
+    // links/SEO/Google indexing -- see class docs). Only an explicit,
+    // different slug in the request (an admin deliberately editing it)
+    // changes it, and only once normalized and confirmed not to collide
+    // with any OTHER product's slug.
+    private String resolveSlugForUpdate(Product product, ProductRequest request) {
+
+        if (!hasExplicitSlug(request)) {
+            return product.getSlug();
+        }
+
+        String normalized = SlugUtil.generateSlug(request.getSlug());
+
+        if (normalized.equals(product.getSlug())) {
+            return normalized;
+        }
+
+        if (productRepository.existsBySlug(normalized)) {
+            throw new DuplicateResourceException(
+                    "This slug is already used by another product.");
+        }
+
+        return normalized;
+    }
+
+    private boolean hasExplicitSlug(ProductRequest request) {
+        return request.getSlug() != null && !request.getSlug().isBlank();
+    }
+
     @Override
     @Transactional
     public ProductResponse updateProduct(Long id, ProductRequest request) {
@@ -137,21 +206,13 @@ public class ProductServiceImpl implements ProductService {
                         new ResourceNotFoundException(
                                 "Category not found with id: " + request.getCategoryId()));
 
-        String slug = SlugUtil.generateSlug(request.getName());
-
-        if (!product.getSlug().equals(slug)
-                && productRepository.existsBySlug(slug)) {
-
-            throw new DuplicateResourceException(
-                    "Product with this name already exists.");
-        }
+        product.setSlug(resolveSlugForUpdate(product, request));
 
         productMapper.updateEntity(product, request);
 
         assertJeansCodeAvailable(product.getJeansCode(), id);
 
         product.setCategory(category);
-        product.setSlug(slug);
 
         Product updatedProduct = productRepository.save(product);
 

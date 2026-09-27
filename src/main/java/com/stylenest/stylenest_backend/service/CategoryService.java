@@ -17,6 +17,13 @@ public interface CategoryService {
 
     CategoryResponse getCategoryById(Long id);
 
+    // The public, canonical customer-facing lookup -- see
+    // CategoryController GET /api/categories/slug/{slug}. The slug already
+    // embeds the gender prefix (see CategoryServiceImpl.buildSlug), so the
+    // caller passes the full stored value (e.g. "women-kurti"), not the
+    // bare category name.
+    CategoryResponse getCategoryBySlug(String slug);
+
     CategoryResponse updateCategory(Long id, CategoryUpdateRequest request);
 
     void deleteCategory(Long id);

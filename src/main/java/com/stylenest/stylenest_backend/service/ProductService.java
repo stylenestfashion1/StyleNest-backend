@@ -17,6 +17,10 @@ public interface ProductService {
 
     ProductResponse getProductById(Long id);
 
+    // The public, canonical customer-facing lookup -- see
+    // ProductController GET /api/products/slug/{slug}.
+    ProductResponse getProductBySlug(String slug);
+
     ProductResponse updateProduct(Long id, ProductRequest request);
 
     void deleteProduct(Long id);

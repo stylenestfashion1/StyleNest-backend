@@ -51,6 +51,17 @@ public class CategoryController {
         return ResponseEntity.ok(categoryService.getCategoryById(id));
     }
 
+    // The canonical public lookup backing the frontend's clean
+    // /women/{categorySlug} and /men/{categorySlug} routes. slug here is
+    // the FULL stored value (e.g. "women-kurti", already gender-prefixed --
+    // see CategoryServiceImpl.buildSlug), not the bare category name.
+    @GetMapping("/slug/{slug}")
+    public ResponseEntity<CategoryResponse> getCategoryBySlug(
+            @PathVariable String slug) {
+
+        return ResponseEntity.ok(categoryService.getCategoryBySlug(slug));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<CategoryResponse> updateCategory(
             @PathVariable Long id,

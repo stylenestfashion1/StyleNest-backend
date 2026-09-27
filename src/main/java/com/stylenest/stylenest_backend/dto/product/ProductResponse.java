@@ -67,6 +67,13 @@ public class ProductResponse {
 
     private String categoryName;
 
+    // The category's own full, gender-prefixed slug (e.g. "women-kurti" --
+    // see CategoryServiceImpl.buildSlug), for building a link to the clean
+    // /{gender}/{categorySlug} listing route. The frontend strips the
+    // gender prefix itself (see ProductDetails.jsx) since the gender is
+    // already a separate path segment there.
+    private String categorySlug;
+
     @Schema(description = "The customer segment this product belongs to, inherited from its category.")
     private Gender gender;
 

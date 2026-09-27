@@ -427,4 +427,246 @@ class ProductServiceImplTest {
         assertThatThrownBy(() -> ProductResponse.class.getDeclaredField("jeansCode"))
                 .isInstanceOf(NoSuchFieldException.class);
     }
+
+    // --- Slug lookup / assignment (SEO URL migration) ---
+
+    @Test
+    void getProductBySlug_found_returnsResponse() {
+
+        newService();
+
+        Product product = product(1L, "Pink Cotton Kurti");
+
+        when(productRepository.findBySlug("pink-cotton-kurti"))
+                .thenReturn(java.util.Optional.of(product));
+
+        ProductResponse response = productService.getProductBySlug("pink-cotton-kurti");
+
+        assertThat(response.getId()).isEqualTo(1L);
+        assertThat(response.getSlug()).isEqualTo("pink cotton kurti".toLowerCase());
+    }
+
+    @Test
+    void getProductBySlug_notFound_throwsResourceNotFound() {
+
+        newService();
+
+        when(productRepository.findBySlug("does-not-exist")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> productService.getProductBySlug("does-not-exist"))
+                .isInstanceOf(com.stylenest.stylenest_backend.exception.ResourceNotFoundException.class);
+    }
+
+    @Test
+    void createProduct_nameCollidesWithAnExistingSlug_autoSuffixesInsteadOfRejecting() {
+
+        newService();
+
+        Category category = Category.builder().id(1L).name("Tops")
+                .gender(com.stylenest.stylenest_backend.enums.Gender.WOMEN).build();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Kurti")
+                .price(BigDecimal.valueOf(999))
+                .categoryId(1L)
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        // A different product already occupies the auto-generated base
+        // slug -- two products sharing a display name is exactly the case
+        // the suffix strategy exists for (see SlugUtil.uniqueSlug).
+        when(productRepository.existsBySlug("pink-cotton-kurti")).thenReturn(true);
+        when(productRepository.existsBySlug("pink-cotton-kurti-2")).thenReturn(false);
+        when(categoryRepository.findById(1L)).thenReturn(java.util.Optional.of(category));
+        when(productRepository.findAllSkus()).thenReturn(List.of());
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.createProduct(request);
+
+        assertThat(response.getSlug()).isEqualTo("pink-cotton-kurti-2");
+    }
+
+    @Test
+    void createProduct_explicitSlugProvided_normalizedAndUsedVerbatim() {
+
+        newService();
+
+        Category category = Category.builder().id(1L).name("Tops")
+                .gender(com.stylenest.stylenest_backend.enums.Gender.WOMEN).build();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Kurti")
+                .slug("  Custom Slug!! ")
+                .price(BigDecimal.valueOf(999))
+                .categoryId(1L)
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.existsBySlug("custom-slug")).thenReturn(false);
+        when(categoryRepository.findById(1L)).thenReturn(java.util.Optional.of(category));
+        when(productRepository.findAllSkus()).thenReturn(List.of());
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.createProduct(request);
+
+        assertThat(response.getSlug()).isEqualTo("custom-slug");
+    }
+
+    @Test
+    void createProduct_explicitSlugCollides_throwsAndNeverSaves() {
+
+        newService();
+
+        Category category = Category.builder().id(1L).name("Tops")
+                .gender(com.stylenest.stylenest_backend.enums.Gender.WOMEN).build();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Kurti")
+                .slug("taken-slug")
+                .price(BigDecimal.valueOf(999))
+                .categoryId(1L)
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.existsBySlug("taken-slug")).thenReturn(true);
+
+        assertThatThrownBy(() -> productService.createProduct(request))
+                .isInstanceOf(DuplicateResourceException.class);
+
+        verify(productRepository, never()).save(org.mockito.ArgumentMatchers.any(Product.class));
+    }
+
+    @Test
+    void updateProduct_nameChangesWithoutExplicitSlug_slugStaysStable() {
+
+        newService();
+
+        Product existing = product(20L, "Pink Cotton Kurti");
+        Category category = existing.getCategory();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Embroidered Kurti") // name changed
+                .price(BigDecimal.valueOf(1299))
+                .categoryId(category.getId())
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.findById(20L)).thenReturn(java.util.Optional.of(existing));
+        when(categoryRepository.findById(category.getId())).thenReturn(java.util.Optional.of(category));
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.updateProduct(20L, request);
+
+        // Existing slug (see product() helper: name.toLowerCase()) must
+        // NOT be regenerated from the new name -- breaking bookmarks/
+        // shared links/SEO is exactly what this guards against.
+        assertThat(response.getSlug()).isEqualTo("pink cotton kurti".toLowerCase());
+        verify(productRepository, never()).existsBySlug(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void updateProduct_explicitDifferentSlug_updatesAfterCollisionCheck() {
+
+        newService();
+
+        Product existing = product(21L, "Pink Cotton Kurti");
+        Category category = existing.getCategory();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Kurti")
+                .slug("pink-cotton-embroidered-kurti")
+                .price(BigDecimal.valueOf(999))
+                .categoryId(category.getId())
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.findById(21L)).thenReturn(java.util.Optional.of(existing));
+        when(categoryRepository.findById(category.getId())).thenReturn(java.util.Optional.of(category));
+        when(productRepository.existsBySlug("pink-cotton-embroidered-kurti")).thenReturn(false);
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.updateProduct(21L, request);
+
+        assertThat(response.getSlug()).isEqualTo("pink-cotton-embroidered-kurti");
+    }
+
+    @Test
+    void updateProduct_explicitSlugCollidesWithAnotherProduct_throwsAndNeverSaves() {
+
+        newService();
+
+        Product existing = product(22L, "Pink Cotton Kurti");
+        Category category = existing.getCategory();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Kurti")
+                .slug("someone-elses-slug")
+                .price(BigDecimal.valueOf(999))
+                .categoryId(category.getId())
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.findById(22L)).thenReturn(java.util.Optional.of(existing));
+        when(categoryRepository.findById(category.getId())).thenReturn(java.util.Optional.of(category));
+        when(productRepository.existsBySlug("someone-elses-slug")).thenReturn(true);
+
+        assertThatThrownBy(() -> productService.updateProduct(22L, request))
+                .isInstanceOf(DuplicateResourceException.class);
+
+        verify(productRepository, never()).save(org.mockito.ArgumentMatchers.any(Product.class));
+    }
+
+    @Test
+    void updateProduct_explicitSlugEqualToCurrentSlug_isNoOpNotACollisionCheck() {
+
+        newService();
+
+        // Built directly (not via the product() helper, whose slug is a
+        // naive name.toLowerCase() with raw spaces) so the "current" slug
+        // is already in the real, normalized form production actually
+        // stores -- otherwise SlugUtil.generateSlug would "change" it
+        // during normalization and this test would be asserting a false
+        // positive.
+        Product existing = product(23L, "Pink Cotton Kurti");
+        existing.setSlug("pink-cotton-kurti");
+        Category category = existing.getCategory();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Kurti")
+                .slug(existing.getSlug()) // admin form re-submits the unchanged value
+                .price(BigDecimal.valueOf(999))
+                .categoryId(category.getId())
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.findById(23L)).thenReturn(java.util.Optional.of(existing));
+        when(categoryRepository.findById(category.getId())).thenReturn(java.util.Optional.of(category));
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.updateProduct(23L, request);
+
+        assertThat(response.getSlug()).isEqualTo(existing.getSlug());
+        // Submitting the same slug back is not a "change" -- no collision
+        // check against other products should even run.
+        verify(productRepository, never()).existsBySlug(org.mockito.ArgumentMatchers.any());
+    }
 }

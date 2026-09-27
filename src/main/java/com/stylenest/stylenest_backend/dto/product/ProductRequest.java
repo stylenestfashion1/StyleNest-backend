@@ -19,6 +19,15 @@ public class ProductRequest {
     @NotBlank
     private String name;
 
+    // Optional public-URL override -- omitted/blank means "auto-generate
+    // from name" on create, or "leave exactly as it currently is" on
+    // update (the slug is never silently regenerated just because the
+    // name changed, so existing shared/bookmarked/indexed product URLs
+    // keep working). When provided, it's normalized the same way an
+    // auto-generated slug is and rejected if it collides with another
+    // product's slug. See ProductServiceImpl.resolveSlugForCreate/Update.
+    private String slug;
+
     private String shortDescription;
 
     private String description;

@@ -84,6 +84,15 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     @Override
+    public CategoryResponse getCategoryBySlug(String slug) {
+
+        Category category = categoryRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found."));
+
+        return categoryMapper.toResponse(category);
+    }
+
+    @Override
     @Transactional
     public CategoryResponse updateCategory(Long id, CategoryUpdateRequest request) {
 

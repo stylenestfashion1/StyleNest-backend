@@ -77,6 +77,7 @@ public class ProductMapper {
                 .thumbnailUrl(meta.thumbnailUrl())
                 .availableColors(meta.availableColors())
                 .categoryName(product.getCategory().getName())
+                .categorySlug(product.getCategory().getSlug())
                 .gender(product.getCategory().getGender())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
