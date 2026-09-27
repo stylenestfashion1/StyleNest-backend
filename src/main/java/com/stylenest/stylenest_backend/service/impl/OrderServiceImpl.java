@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,6 +75,13 @@ public class OrderServiceImpl implements OrderService {
     private final EmailService emailService;
     private final ProductPricingService productPricingService;
 
+    // Defaults to false so USD is never claimed as payable until the
+    // merchant's Razorpay account is actually confirmed activated for
+    // international payments -- flipping this on is a config-only change,
+    // never a code change (see reserveOrder's USD guard below).
+    @Value("${razorpay.international-payments-enabled:false}")
+    private boolean razorpayInternationalPaymentsEnabled;
+
     private User getCurrentUser() {
 
         String email = SecurityContextHolder
@@ -100,7 +108,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public OrderResponse placeOrder(OrderRequest request) {
 
-        // Online payments must go through the Easebuzz flow, which needs to
+        // Online payments must go through the Razorpay flow, which needs to
         // reserve the order *before* the customer pays and only clear the
         // cart once payment is verified. COD keeps its original, simpler
         // one-call behavior: reserve and finish in the same request.
@@ -108,7 +116,7 @@ public class OrderServiceImpl implements OrderService {
 
             throw new BadRequestException(
                     "Online payments must be started via "
-                            + "POST /api/payments/easebuzz/initiate. "
+                            + "POST /api/payments/razorpay/initiate. "
                             + "This endpoint only accepts COD.");
         }
 
@@ -216,7 +224,7 @@ public class OrderServiceImpl implements OrderService {
 
             throw new BadRequestException(
                     "Online payments must be started via "
-                            + "POST /api/payments/easebuzz/guest/initiate. "
+                            + "POST /api/payments/razorpay/guest/initiate. "
                             + "This endpoint only accepts COD.");
         }
 
@@ -302,9 +310,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     // Loose but real check: an optional leading "+" country code, then
-    // 5-20 digits -- matches PaymentServiceImpl's own PHONE_PATTERN, since
-    // this same number is what eventually gets sent to Easebuzz for
-    // online payments and must not fail validation there instead.
+    // 5-20 digits. Guest order/invoice tracking is looked up by this exact
+    // number (see GuestOrderServiceImpl), so it must be validated here
+    // rather than accepted as free-form text.
     private static final Pattern GUEST_PHONE_PATTERN = Pattern.compile("^(\\+\\d{1,4}[-]?)?\\d{5,20}$");
 
     private void validateGuestShippingAddress(GuestShippingAddressRequest address) {
@@ -385,16 +393,20 @@ public class OrderServiceImpl implements OrderService {
      *
      * All four public entry points (registered COD/online, guest COD/online)
      * converge here, which is why the USD block below -- thrown before any
-     * Order row is persisted or stock is touched, and before Easebuzz can
-     * ever be contacted -- covers every checkout path uniformly. Remove
-     * this guard only once Razorpay is actually integrated for USD.
+     * Order row is persisted or stock is touched, and before the payment
+     * gateway can ever be contacted -- covers every checkout path uniformly.
+     * Gated by razorpayInternationalPaymentsEnabled rather than removed
+     * outright: the code path is Razorpay-ready, but international
+     * payments are never claimed as live until the merchant's Razorpay
+     * account is actually confirmed activated for them -- flip the config
+     * flag then, no code change needed.
      */
     private Order reserveOrder(
             User user, String guestEmail, Address liveAddress,
             ShippingSnapshot snapshot, List<ReservationLine> lines, PaymentMethod paymentMethod,
             Currency currency) {
 
-        if (currency == Currency.USD) {
+        if (currency == Currency.USD && !razorpayInternationalPaymentsEnabled) {
             throw new UnsupportedPaymentCurrencyException(
                     "International online payments will be available soon. "
                             + "Please try again once international payment support is enabled.");

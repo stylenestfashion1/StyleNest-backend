@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -207,9 +208,10 @@ public class GlobalExceptionHandler {
                 null);
     }
 
-    // International (USD) Payment Not Yet Available -- Razorpay isn't
-    // integrated yet; blocked before any Order row is persisted or
-    // Easebuzz is contacted. See OrderServiceImpl.reserveOrder.
+    // International (USD) Payment Not Yet Available -- blocked until the
+    // merchant's Razorpay account is confirmed activated for international
+    // payments; the Order row is never persisted and Razorpay is never
+    // contacted for this case. See OrderServiceImpl.reserveOrder.
 
     @ExceptionHandler(UnsupportedPaymentCurrencyException.class)
     public ResponseEntity<ApiResponse<Object>> handleUnsupportedPaymentCurrency(
@@ -221,7 +223,7 @@ public class GlobalExceptionHandler {
                 null);
     }
 
-    // Payment Gateway Failure (Easebuzz network/API error -- never leak the
+    // Payment Gateway Failure (Razorpay network/API error -- never leak the
     // raw gateway response, which may contain internal details)
 
     @ExceptionHandler(PaymentGatewayException.class)
@@ -290,6 +292,20 @@ public class GlobalExceptionHandler {
         return buildResponse(
                 HttpStatus.BAD_REQUEST,
                 "Invalid value for parameter '" + ex.getName() + "'.",
+                null);
+    }
+
+    // A required header is missing (e.g. the Razorpay webhook posted
+    // without X-Razorpay-Signature) -- without this, it falls through to
+    // the generic Exception.class handler below as a 500, when it's really
+    // just a bad request from whoever/whatever sent it.
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMissingRequestHeader(
+            MissingRequestHeaderException ex) {
+
+        return buildResponse(
+                HttpStatus.BAD_REQUEST,
+                "Required header '" + ex.getHeaderName() + "' is missing.",
                 null);
     }
 

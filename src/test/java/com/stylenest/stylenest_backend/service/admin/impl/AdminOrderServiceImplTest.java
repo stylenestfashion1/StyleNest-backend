@@ -118,7 +118,7 @@ class AdminOrderServiceImplTest {
 
         Order registeredOrder = Order.builder()
                 .id(1L).orderNumber("F21-1001").totalAmount(BigDecimal.TEN)
-                .orderStatus(OrderStatus.PENDING).paymentMethod(PaymentMethod.UPI).paymentStatus(PaymentStatus.PAID)
+                .orderStatus(OrderStatus.PENDING).paymentMethod(PaymentMethod.ONLINE).paymentStatus(PaymentStatus.PAID)
                 .user(registeredUser)
                 .build();
 

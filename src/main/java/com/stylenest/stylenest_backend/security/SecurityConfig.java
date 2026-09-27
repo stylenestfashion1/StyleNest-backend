@@ -83,12 +83,22 @@ public class SecurityConfig {
                         // AUTH
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // EASEBUZZ CALLBACK (Easebuzz posts here with no
-                        // StyleNest JWT -- the request is authenticated by
-                        // its own hash signature instead, verified in
-                        // PaymentServiceImpl.handleCallback)
+                        // RAZORPAY WEBHOOK (Razorpay posts here server-to-
+                        // server with no StyleNest JWT -- authenticated by
+                        // its own HMAC signature instead, verified in
+                        // PaymentServiceImpl.handleWebhook)
                         .requestMatchers(HttpMethod.POST,
-                                "/api/payments/easebuzz/callback").permitAll()
+                                "/api/payments/razorpay/webhook").permitAll()
+
+                        // RAZORPAY VERIFY (called by our frontend right after
+                        // Razorpay Checkout's client-side success handler,
+                        // for both registered and guest checkout -- the
+                        // internal order is resolved from our own stored
+                        // providerOrderId, never from a client-supplied user
+                        // context, and the signature is verified server-side
+                        // in PaymentServiceImpl.verifyPayment)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/payments/razorpay/verify").permitAll()
 
                         // GUEST CHECKOUT (no login/registration/OTP -- access
                         // control for tracking/invoice is order-number +
@@ -96,7 +106,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/guest/orders",
                                 "/api/guest/orders/track",
-                                "/api/payments/easebuzz/guest/initiate"
+                                "/api/payments/razorpay/guest/initiate"
                         ).permitAll()
 
                         .requestMatchers(HttpMethod.GET,

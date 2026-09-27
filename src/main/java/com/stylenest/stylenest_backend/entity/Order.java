@@ -67,7 +67,7 @@ public class Order {
     private String shippingCountryCode;
 
     // Guards against sending the order-confirmation email twice (e.g. a
-    // duplicate Easebuzz callback).
+    // duplicate webhook delivery or a race with the synchronous verify call).
     @Builder.Default
     private Boolean confirmationEmailSent = false;
 

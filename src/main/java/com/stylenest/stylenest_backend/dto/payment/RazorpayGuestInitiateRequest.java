@@ -4,7 +4,7 @@ import java.util.List;
 
 import com.stylenest.stylenest_backend.dto.order.GuestOrderItemRequest;
 import com.stylenest.stylenest_backend.dto.order.GuestShippingAddressRequest;
-import com.stylenest.stylenest_backend.enums.PaymentMethod;
+import com.stylenest.stylenest_backend.enums.Currency;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -14,16 +14,19 @@ import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 /**
- * Guest analog of EasebuzzInitiateRequest -- also carries the not-yet-
- * reserved order's contents, since a guest has no server-side cart for
- * OrderService to read from.
+ * Guest analog of the (implicit, no-body) registered initiate call -- also
+ * carries the not-yet-reserved order's contents, since a guest has no
+ * server-side cart for OrderService to read from. No paymentMethod/upiVa/
+ * bankCode fields: Razorpay Checkout itself is where the customer picks
+ * card/UPI/netbanking/wallet, so this endpoint only ever means "start an
+ * online payment."
  */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class GuestPaymentInitiateRequest {
+public class RazorpayGuestInitiateRequest {
 
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email")
@@ -33,16 +36,10 @@ public class GuestPaymentInitiateRequest {
     @Valid
     private GuestShippingAddressRequest shippingAddress;
 
-    @NotNull(message = "Payment method is required")
-    private PaymentMethod paymentMethod;
-
     @NotEmpty(message = "At least one item is required")
     @Valid
     private List<GuestOrderItemRequest> items;
 
-    // Required only when paymentMethod = UPI
-    private String upiVa;
-
-    // Required only when paymentMethod = NETBANKING
-    private String bankCode;
+    @NotNull(message = "Currency is required")
+    private Currency currency;
 }

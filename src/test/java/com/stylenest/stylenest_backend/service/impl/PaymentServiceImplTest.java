@@ -2,19 +2,13 @@ package com.stylenest.stylenest_backend.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -22,29 +16,44 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylenest.stylenest_backend.dto.order.GuestOrderItemRequest;
 import com.stylenest.stylenest_backend.dto.order.GuestShippingAddressRequest;
-import com.stylenest.stylenest_backend.dto.payment.EasebuzzInitiateRequest;
-import com.stylenest.stylenest_backend.dto.payment.EasebuzzInitiateResponse;
-import com.stylenest.stylenest_backend.dto.payment.GuestPaymentInitiateRequest;
-import com.stylenest.stylenest_backend.entity.Address;
+import com.stylenest.stylenest_backend.dto.payment.RazorpayGuestInitiateRequest;
+import com.stylenest.stylenest_backend.dto.payment.RazorpayInitiateResponse;
+import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyRequest;
+import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyResponse;
 import com.stylenest.stylenest_backend.entity.Cart;
 import com.stylenest.stylenest_backend.entity.Order;
+import com.stylenest.stylenest_backend.entity.Payment;
 import com.stylenest.stylenest_backend.entity.User;
+import com.stylenest.stylenest_backend.enums.Currency;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
+import com.stylenest.stylenest_backend.enums.PaymentProvider;
+import com.stylenest.stylenest_backend.enums.PaymentState;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
-import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.exception.InvalidPaymentSignatureException;
-import com.stylenest.stylenest_backend.exception.PaymentGatewayException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
 import com.stylenest.stylenest_backend.repository.CartRepository;
-import com.stylenest.stylenest_backend.repository.OrderRepository;
-import com.stylenest.stylenest_backend.service.EasebuzzClient;
-import com.stylenest.stylenest_backend.service.EasebuzzHashService;
+import com.stylenest.stylenest_backend.repository.PaymentRepository;
+import com.stylenest.stylenest_backend.repository.WebhookEventRepository;
 import com.stylenest.stylenest_backend.service.OrderService;
+import com.stylenest.stylenest_backend.service.PaymentProviderClient;
 
+/**
+ * Everything here except one thing is genuinely testable without a real
+ * Razorpay account: PaymentProviderClient is mocked, so the actual Razorpay
+ * Checkout completion / real signature cryptography against a live secret
+ * is NOT exercised here -- that lives in RazorpayPaymentProviderClient
+ * itself (a thin SDK wrapper) and in manual/E2E testing with Razorpay Test
+ * Mode credentials, which this environment doesn't have. What IS verified
+ * here is exactly the logic this class is responsible for: never trusting
+ * a signature/callback alone, resolving orders only by our own stored
+ * providerOrderId (never a client-supplied internal id), never cancelling
+ * an Order on a first failed payment attempt, idempotency against repeat
+ * verify calls / duplicate webhooks, and cart-clearing only on real success.
+ */
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceImplTest {
 
@@ -52,226 +61,102 @@ class PaymentServiceImplTest {
     private OrderService orderService;
 
     @Mock
-    private OrderRepository orderRepository;
+    private PaymentRepository paymentRepository;
+
+    @Mock
+    private WebhookEventRepository webhookEventRepository;
 
     @Mock
     private CartRepository cartRepository;
 
     @Mock
-    private EasebuzzClient easebuzzClient;
-
-    private EasebuzzHashService hashService;
+    private PaymentProviderClient paymentProviderClient;
 
     private PaymentServiceImpl paymentService;
 
     private User user;
-    private Address address;
     private Order order;
 
     @BeforeEach
     void setUp() {
 
-        hashService = new EasebuzzHashService();
-
         paymentService = new PaymentServiceImpl(
-                orderService, orderRepository, cartRepository, hashService, easebuzzClient);
-
-        ReflectionTestUtils.setField(paymentService, "merchantKey", "TESTKEY");
-        ReflectionTestUtils.setField(paymentService, "salt", "TESTSALT");
-        ReflectionTestUtils.setField(paymentService, "env", "test");
-        ReflectionTestUtils.setField(paymentService, "appBaseUrl", "https://api.example.com");
-        ReflectionTestUtils.setField(paymentService, "frontendUrl", "https://shop.example.com");
+                orderService, paymentRepository, webhookEventRepository, cartRepository,
+                paymentProviderClient, new ObjectMapper());
 
         user = User.builder().id(1L).email("customer@example.com").fullName("Customer").build();
 
-        address = Address.builder()
-                .id(10L)
-                .fullName("Customer Name")
-                .phone("9999999999")
-                .addressLine1("123 Test St")
-                .city("Testville")
-                .state("TS")
-                .country("India")
-                .postalCode("123456")
-                .build();
-
-        order = buildOrder(PaymentMethod.CARD, PaymentStatus.PENDING);
-    }
-
-    private Order buildOrder(PaymentMethod method, PaymentStatus status) {
-
-        return Order.builder()
+        order = Order.builder()
                 .id(99L)
-                .orderNumber("F21-1000-ABCDEF")
+                .orderNumber("SN-1000-ABCDEF")
                 .user(user)
-                .address(address)
-                // Shipping snapshot -- what OrderServiceImpl.reserveOrder
-                // would actually have captured at reservation time. Kept
-                // equal to `address` here on purpose; the dedicated
-                // regression test below deliberately diverges them.
-                .shippingFullName(address.getFullName())
-                .shippingPhone(address.getPhone())
-                .shippingAddressLine1(address.getAddressLine1())
-                .shippingCity(address.getCity())
-                .shippingState(address.getState())
-                .shippingCountry(address.getCountry())
-                .shippingPostalCode(address.getPostalCode())
                 .totalAmount(new BigDecimal("2799.00"))
-                .paymentMethod(method)
-                .paymentStatus(status)
+                .currency(Currency.INR)
+                .paymentMethod(PaymentMethod.ONLINE)
+                .paymentStatus(PaymentStatus.PENDING)
                 .orderItems(new ArrayList<>())
                 .build();
     }
 
-    @Test
-    void initiate_rejectsCod() {
+    private Payment buildPayment(String providerOrderId, PaymentState status) {
 
-        EasebuzzInitiateRequest request = EasebuzzInitiateRequest.builder()
-                .paymentMethod(PaymentMethod.COD)
+        return Payment.builder()
+                .id(500L)
+                .order(order)
+                .provider(PaymentProvider.RAZORPAY)
+                .providerOrderId(providerOrderId)
+                .amount(order.getTotalAmount())
+                .currency(order.getCurrency())
+                .status(status)
                 .build();
-
-        assertThatThrownBy(() -> paymentService.initiate(request))
-                .isInstanceOf(BadRequestException.class);
     }
 
-    @Test
-    void initiate_rejectsUpiWithoutUpiVa() {
-
-        EasebuzzInitiateRequest request = EasebuzzInitiateRequest.builder()
-                .paymentMethod(PaymentMethod.UPI)
-                .build();
-
-        assertThatThrownBy(() -> paymentService.initiate(request))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("upiVa");
-    }
+    // --- initiate / initiateForGuest ---
 
     @Test
-    void initiate_rejectsNetbankingWithoutBankCode() {
+    void initiate_firstCall_createsRazorpayOrderUsingServerResolvedAmount() {
 
-        EasebuzzInitiateRequest request = EasebuzzInitiateRequest.builder()
-                .paymentMethod(PaymentMethod.NETBANKING)
-                .build();
+        when(orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE)).thenReturn(order);
+        when(paymentRepository.findByOrder(order)).thenReturn(Optional.empty());
+        when(paymentProviderClient.createOrder(new BigDecimal("2799.00"), Currency.INR, "SN-1000-ABCDEF"))
+                .thenReturn(new PaymentProviderClient.ProviderOrder("order_abc123", "created"));
+        when(paymentProviderClient.publicKeyId()).thenReturn("rzp_test_key");
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> paymentService.initiate(request))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("bankCode");
-    }
-
-    @Test
-    void initiate_whenGatewayNotConfigured_failsCleanly() {
-
-        ReflectionTestUtils.setField(paymentService, "merchantKey", "");
-
-        EasebuzzInitiateRequest request = EasebuzzInitiateRequest.builder()
-                .paymentMethod(PaymentMethod.CARD)
-                .build();
-
-        assertThatThrownBy(() -> paymentService.initiate(request))
-                .isInstanceOf(PaymentGatewayException.class);
-    }
-
-    @Test
-    void initiate_card_usesOrderAmountAndReturnsHostedRedirectUrl() {
-
-        when(orderService.reserveOrderForOnlinePayment(PaymentMethod.CARD)).thenReturn(order);
-        when(easebuzzClient.initiateLink(anyMap())).thenReturn("a".repeat(64));
-
-        EasebuzzInitiateRequest request = EasebuzzInitiateRequest.builder()
-                .paymentMethod(PaymentMethod.CARD)
-                .build();
-
-        EasebuzzInitiateResponse response = paymentService.initiate(request);
+        RazorpayInitiateResponse response = paymentService.initiate();
 
         assertThat(response.getOrderId()).isEqualTo(99L);
-        assertThat(response.getAmount()).isEqualByComparingTo("2799.00");
-        assertThat(response.getRedirectUrl()).isEqualTo("https://testpay.easebuzz.in/pay/" + "a".repeat(64));
-        assertThat(response.getBankRedirectHtml()).isNull();
+        assertThat(response.getRazorpayOrderId()).isEqualTo("order_abc123");
+        assertThat(response.getRazorpayKeyId()).isEqualTo("rzp_test_key");
+        assertThat(response.getAmountMinor()).isEqualTo(279900L);
+        assertThat(response.getCurrency()).isEqualTo(Currency.INR);
 
-        // The amount sent to Easebuzz must be the server-side order amount,
-        // never something the client could have supplied.
-        @SuppressWarnings("unchecked")
-        var captor = org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(easebuzzClient).initiateLink((Map<String, String>) captor.capture());
-        assertThat(captor.getValue().get("amount")).isEqualTo("2799.00");
-        assertThat(captor.getValue().get("txnid")).isEqualTo("F21-1000-ABCDEF");
-        assertThat(captor.getValue()).doesNotContainKey("request_flow");
+        // The amount/currency sent to Razorpay came from the Order, never
+        // from anything a client could have supplied to this no-arg call.
+        verify(paymentProviderClient).createOrder(new BigDecimal("2799.00"), Currency.INR, "SN-1000-ABCDEF");
     }
 
     @Test
-    void buildInitiateParams_usesShippingSnapshotNotLiveAddress() {
+    void initiate_secondCallForSameOrder_reusesExistingRazorpayOrderWithoutCreatingAnother() {
 
-        // Deliberately diverge the snapshot from the live Address row --
-        // simulates the customer having since edited their saved address.
-        // The payment gateway must see the ORIGINAL data captured at
-        // order-reservation time, not whatever the live row says now.
-        Address editedAddress = Address.builder()
-                .id(10L)
-                .fullName("Edited Later Name")
-                .phone("8888888888")
-                .addressLine1("999 Edited Ave")
-                .city("Editedville")
-                .state("ED")
-                .country("India")
-                .postalCode("999999")
-                .build();
+        Payment existing = buildPayment("order_abc123", PaymentState.CREATED);
 
-        order.setAddress(editedAddress); // live row now differs from the snapshot
+        when(orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE)).thenReturn(order);
+        when(paymentRepository.findByOrder(order)).thenReturn(Optional.of(existing));
+        when(paymentProviderClient.publicKeyId()).thenReturn("rzp_test_key");
 
-        when(orderService.reserveOrderForOnlinePayment(PaymentMethod.CARD)).thenReturn(order);
-        when(easebuzzClient.initiateLink(anyMap())).thenReturn("a".repeat(64));
+        RazorpayInitiateResponse response = paymentService.initiate();
 
-        paymentService.initiate(EasebuzzInitiateRequest.builder().paymentMethod(PaymentMethod.CARD).build());
-
-        @SuppressWarnings("unchecked")
-        var captor = org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(easebuzzClient).initiateLink((Map<String, String>) captor.capture());
-
-        assertThat(captor.getValue().get("firstname")).isEqualTo("Customer Name"); // snapshot, not "Edited Later Name"
-        assertThat(captor.getValue().get("phone")).isEqualTo("9999999999"); // snapshot, not "8888888888"
-        assertThat(captor.getValue().get("city")).isEqualTo("Testville"); // snapshot, not "Editedville"
+        assertThat(response.getRazorpayOrderId()).isEqualTo("order_abc123");
+        verify(paymentProviderClient, never()).createOrder(any(), any(), any());
+        verify(paymentRepository, never()).save(any());
     }
 
     @Test
-    void initiate_upi_setsSeamlessRequestFlowAndUpiFields() {
+    void initiateForGuest_buildsGuestOrderRequestWithOnlinePaymentMethodAndDelegates() {
 
-        Order upiOrder = buildOrder(PaymentMethod.UPI, PaymentStatus.PENDING);
-
-        when(orderService.reserveOrderForOnlinePayment(PaymentMethod.UPI)).thenReturn(upiOrder);
-        when(easebuzzClient.initiateLink(anyMap())).thenReturn("b".repeat(64));
-        when(easebuzzClient.initiateSeamlessPayment(anyMap()))
-                .thenReturn(EasebuzzClient.SeamlessResult.json(Map.of("status", (Object) 1)));
-
-        EasebuzzInitiateRequest request = EasebuzzInitiateRequest.builder()
-                .paymentMethod(PaymentMethod.UPI)
-                .upiVa("customer@okhdfcbank")
-                .build();
-
-        EasebuzzInitiateResponse response = paymentService.initiate(request);
-
-        assertThat(response.getMessage()).containsIgnoringCase("UPI app");
-        assertThat(response.getRedirectUrl()).isNull();
-
-        @SuppressWarnings("unchecked")
-        var initiateCaptor = org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(easebuzzClient).initiateLink((Map<String, String>) initiateCaptor.capture());
-        assertThat(initiateCaptor.getValue().get("request_flow")).isEqualTo("SEAMLESS");
-
-        @SuppressWarnings("unchecked")
-        var seamlessCaptor = org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(easebuzzClient).initiateSeamlessPayment((Map<String, String>) seamlessCaptor.capture());
-        assertThat(seamlessCaptor.getValue()).containsEntry("payment_mode", "UPI");
-        assertThat(seamlessCaptor.getValue()).containsEntry("upi_va", "customer@okhdfcbank");
-    }
-
-    // --- Guest initiate ---
-
-    private GuestPaymentInitiateRequest guestInitiateRequest(PaymentMethod method) {
-
-        return GuestPaymentInitiateRequest.builder()
+        RazorpayGuestInitiateRequest request = RazorpayGuestInitiateRequest.builder()
                 .guestEmail("guest@example.com")
-                .paymentMethod(method)
-                .upiVa(method == PaymentMethod.UPI ? "guest@okhdfcbank" : null)
                 .shippingAddress(GuestShippingAddressRequest.builder()
                         .fullName("Guest Customer")
                         .phone("9998887777")
@@ -281,204 +166,390 @@ class PaymentServiceImplTest {
                         .postalCode("111111")
                         .country("India")
                         .build())
-                .items(List.of(GuestOrderItemRequest.builder().productVariantId(1L).quantity(1).build()))
+                .items(java.util.List.of(GuestOrderItemRequest.builder().productVariantId(1L).quantity(1).build()))
+                .currency(Currency.INR)
                 .build();
-    }
-
-    @Test
-    void initiateForGuest_card_reachesEasebuzzUsingGuestOrder() {
 
         Order guestOrder = Order.builder()
                 .id(101L)
-                .orderNumber("F21-GUEST-1")
+                .orderNumber("SN-GUEST-1")
                 .user(null)
                 .guestEmail("guest@example.com")
-                .shippingFullName("Guest Customer")
-                .shippingPhone("9998887777")
-                .shippingAddressLine1("1 Guest Rd")
-                .shippingCity("Guest City")
-                .shippingState("GS")
-                .shippingCountry("India")
-                .shippingPostalCode("111111")
                 .totalAmount(new BigDecimal("500.00"))
-                .paymentMethod(PaymentMethod.CARD)
+                .currency(Currency.INR)
+                .paymentMethod(PaymentMethod.ONLINE)
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderItems(new ArrayList<>())
                 .build();
 
         when(orderService.reserveGuestOrderForOnlinePayment(any())).thenReturn(guestOrder);
-        when(easebuzzClient.initiateLink(anyMap())).thenReturn("c".repeat(64));
+        when(paymentRepository.findByOrder(guestOrder)).thenReturn(Optional.empty());
+        when(paymentProviderClient.createOrder(new BigDecimal("500.00"), Currency.INR, "SN-GUEST-1"))
+                .thenReturn(new PaymentProviderClient.ProviderOrder("order_guest1", "created"));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        EasebuzzInitiateResponse response = paymentService.initiateForGuest(guestInitiateRequest(PaymentMethod.CARD));
+        RazorpayInitiateResponse response = paymentService.initiateForGuest(request);
 
         assertThat(response.getOrderId()).isEqualTo(101L);
-        assertThat(response.getRedirectUrl()).isEqualTo("https://testpay.easebuzz.in/pay/" + "c".repeat(64));
+        assertThat(response.getRazorpayOrderId()).isEqualTo("order_guest1");
 
-        @SuppressWarnings("unchecked")
-        var captor = org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(easebuzzClient).initiateLink((Map<String, String>) captor.capture());
-        assertThat(captor.getValue().get("email")).isEqualTo("guest@example.com"); // no User -- falls back to guestEmail
+        var captor = org.mockito.ArgumentCaptor.forClass(com.stylenest.stylenest_backend.dto.order.GuestOrderRequest.class);
+        verify(orderService).reserveGuestOrderForOnlinePayment(captor.capture());
+        assertThat(captor.getValue().getPaymentMethod()).isEqualTo(PaymentMethod.ONLINE);
+        assertThat(captor.getValue().getGuestEmail()).isEqualTo("guest@example.com");
+        assertThat(captor.getValue().getCurrency()).isEqualTo(Currency.INR);
     }
 
-    @Test
-    void handleCallback_rejectsInvalidHash() {
-
-        Map<String, String> response = new HashMap<>();
-        response.put("status", "success");
-        response.put("txnid", "F21-1000-ABCDEF");
-        response.put("hash", "not-a-real-hash");
-
-        assertThatThrownBy(() -> paymentService.handleCallback(response))
-                .isInstanceOf(InvalidPaymentSignatureException.class);
-
-        verify(orderRepository, never()).findByOrderNumber(any());
-    }
+    // --- verifyPayment ---
 
     @Test
-    void handleCallback_whenOrderMissing_throwsNotFound() {
+    void verifyPayment_unknownRazorpayOrderId_throwsNotFound() {
 
-        Map<String, String> response = validSignedResponse("failure");
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_does_not_exist")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
 
-        when(orderRepository.findByOrderNumber("F21-1000-ABCDEF")).thenReturn(Optional.empty());
+        when(paymentRepository.findByProviderOrderId("order_does_not_exist")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> paymentService.handleCallback(response))
+        assertThatThrownBy(() -> paymentService.verifyPayment(request))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void handleCallback_success_marksPaidAndClearsCart() {
+    void verifyPayment_alreadyPaidOrder_isIdempotentNoOp() {
 
-        Map<String, String> response = validSignedResponse("success");
+        order.setPaymentStatus(PaymentStatus.PAID);
+        Payment payment = buildPayment("order_abc123", PaymentState.CAPTURED);
 
-        when(orderRepository.findByOrderNumber("F21-1000-ABCDEF")).thenReturn(Optional.of(order));
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
 
-        // orderService is a mock -- markOnlinePaymentPaid() won't actually
-        // mutate `order` unless we tell it to, same as the real
-        // OrderServiceImpl.markOnlinePaymentPaid does.
-        org.mockito.Mockito.doAnswer(inv -> {
-            order.setPaymentStatus(PaymentStatus.PAID);
-            return null;
-        }).when(orderService).markOnlinePaymentPaid(order);
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
 
-        Cart cart = Cart.builder().id(5L).user(user).items(new ArrayList<>()).build();
+        RazorpayVerifyResponse response = paymentService.verifyPayment(request);
+
+        assertThat(response.getPaymentStatus()).isEqualTo(PaymentStatus.PAID);
+        verify(paymentProviderClient, never()).verifyPaymentSignature(any(), any(), any());
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+    }
+
+    @Test
+    void verifyPayment_invalidSignature_throwsAndNeverMarksOrder() {
+
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("forged-signature")
+                .build();
+
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_x", "forged-signature"))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> paymentService.verifyPayment(request))
+                .isInstanceOf(InvalidPaymentSignatureException.class);
+
+        verify(paymentProviderClient, never()).fetchPayment(any());
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+    }
+
+    @Test
+    void verifyPayment_paymentIdBelongsToADifferentRazorpayOrder_isRejected() {
+
+        // A genuinely valid signature and a real payment_id at Razorpay --
+        // but that payment_id's own order_id doesn't match the order we
+        // resolved. Must never be trusted just because the signature passed.
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_from_another_order")
+                .razorpaySignature("sig_x")
+                .build();
+
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_from_another_order", "sig_x"))
+                .thenReturn(true);
+        when(paymentProviderClient.fetchPayment("pay_from_another_order"))
+                .thenReturn(new PaymentProviderClient.ProviderPayment(
+                        "pay_from_another_order", "order_someone_elses", "captured", "card", null));
+
+        assertThatThrownBy(() -> paymentService.verifyPayment(request))
+                .isInstanceOf(InvalidPaymentSignatureException.class);
+
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+    }
+
+    @Test
+    void verifyPayment_captured_marksOrderPaidAndClearsRegisteredCustomersCart() {
+
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+        Cart cart = Cart.builder().id(5L).user(user).items(new ArrayList<>()).currency(Currency.INR).build();
+
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
+
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_x", "sig_x")).thenReturn(true);
+        when(paymentProviderClient.fetchPayment("pay_x"))
+                .thenReturn(new PaymentProviderClient.ProviderPayment("pay_x", "order_abc123", "captured", "card", null));
         when(cartRepository.findByUser(user)).thenReturn(Optional.of(cart));
 
-        String redirect = paymentService.handleCallback(response);
+        paymentService.verifyPayment(request);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentState.CAPTURED);
+        assertThat(payment.getProviderPaymentId()).isEqualTo("pay_x");
+        verify(orderService).markOnlinePaymentPaid(order);
+        verify(cartRepository).save(cart);
+        assertThat(cart.getItems()).isEmpty();
+        assertThat(cart.getCurrency()).isNull();
+    }
+
+    @Test
+    void verifyPayment_capturedGuestOrder_marksPaidWithoutTouchingAnyCart() {
+
+        order.setUser(null);
+        order.setGuestEmail("guest@example.com");
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
+
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_x", "sig_x")).thenReturn(true);
+        when(paymentProviderClient.fetchPayment("pay_x"))
+                .thenReturn(new PaymentProviderClient.ProviderPayment("pay_x", "order_abc123", "captured", "card", null));
+
+        paymentService.verifyPayment(request);
 
         verify(orderService).markOnlinePaymentPaid(order);
-        verify(orderService, never()).markOnlinePaymentFailed(any());
-        verify(cartRepository).save(cart);
-        assertThat(redirect).contains("/orders/99").contains("payment=success");
-    }
-
-    @Test
-    void handleCallback_success_guestOrder_skipsCartClearWithoutError() {
-
-        Order guestOrder = buildOrder(PaymentMethod.CARD, PaymentStatus.PENDING);
-        guestOrder.setUser(null);
-        guestOrder.setGuestEmail("guest@example.com");
-
-        Map<String, String> response = validSignedResponse("success");
-
-        when(orderRepository.findByOrderNumber("F21-1000-ABCDEF")).thenReturn(Optional.of(guestOrder));
-
-        org.mockito.Mockito.doAnswer(inv -> {
-            guestOrder.setPaymentStatus(PaymentStatus.PAID);
-            return null;
-        }).when(orderService).markOnlinePaymentPaid(guestOrder);
-
-        assertThatCode(() -> paymentService.handleCallback(response)).doesNotThrowAnyException();
-
         verify(cartRepository, never()).findByUser(any());
     }
 
     @Test
-    void handleCallback_failure_marksFailedAndLeavesCartAlone() {
+    void verifyPayment_authorizedThenCaptured_explicitlyCapturesAndMarksPaid() {
 
-        Map<String, String> response = validSignedResponse("failure");
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
 
-        when(orderRepository.findByOrderNumber("F21-1000-ABCDEF")).thenReturn(Optional.of(order));
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
 
-        org.mockito.Mockito.doAnswer(inv -> {
-            order.setPaymentStatus(PaymentStatus.FAILED);
-            return null;
-        }).when(orderService).markOnlinePaymentFailed(order);
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_x", "sig_x")).thenReturn(true);
+        when(paymentProviderClient.fetchPayment("pay_x"))
+                .thenReturn(new PaymentProviderClient.ProviderPayment("pay_x", "order_abc123", "authorized", "card", null));
+        when(paymentProviderClient.capturePayment("pay_x", order.getTotalAmount(), order.getCurrency()))
+                .thenReturn(new PaymentProviderClient.ProviderPayment("pay_x", "order_abc123", "captured", "card", null));
+        when(cartRepository.findByUser(user)).thenReturn(Optional.empty());
 
-        String redirect = paymentService.handleCallback(response);
+        paymentService.verifyPayment(request);
 
-        verify(orderService).markOnlinePaymentFailed(order);
+        assertThat(payment.getStatus()).isEqualTo(PaymentState.CAPTURED);
+        verify(paymentProviderClient).capturePayment("pay_x", new BigDecimal("2799.00"), Currency.INR);
+        verify(orderService).markOnlinePaymentPaid(order);
+    }
+
+    @Test
+    void verifyPayment_authorizedButCaptureFails_staysAuthorizedAndNeverMarksPaid() {
+
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
+
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_x", "sig_x")).thenReturn(true);
+        when(paymentProviderClient.fetchPayment("pay_x"))
+                .thenReturn(new PaymentProviderClient.ProviderPayment("pay_x", "order_abc123", "authorized", "card", null));
+        when(paymentProviderClient.capturePayment("pay_x", order.getTotalAmount(), order.getCurrency()))
+                .thenReturn(new PaymentProviderClient.ProviderPayment("pay_x", "order_abc123", "authorized", "card", null));
+
+        paymentService.verifyPayment(request);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentState.AUTHORIZED);
         verify(orderService, never()).markOnlinePaymentPaid(any());
-        verify(cartRepository, never()).findByUser(any());
-        assertThat(redirect).contains("/orders/99").contains("payment=failed");
-    }
-
-    @Test
-    void handleCallback_duplicateCallbackAfterAlreadyPaid_isIdempotentNoOp() {
-
-        Order alreadyPaid = buildOrder(PaymentMethod.CARD, PaymentStatus.PAID);
-
-        Map<String, String> response = validSignedResponse("success");
-
-        when(orderRepository.findByOrderNumber("F21-1000-ABCDEF")).thenReturn(Optional.of(alreadyPaid));
-
-        paymentService.handleCallback(response);
-
-        verify(orderService, never()).markOnlinePaymentPaid(any());
-        verify(orderService, never()).markOnlinePaymentFailed(any());
-        verify(cartRepository, never()).findByUser(any());
     }
 
     /**
-     * Builds a callback payload whose "hash" field is a genuine, correctly
-     * computed reverse hash for the given status. The hash is computed here
-     * independently of EasebuzzHashService (plain MessageDigest, same
-     * documented field sequence) so this fixture doesn't depend on the
-     * production hash code being correct -- PaymentServiceImpl still calls
-     * the real EasebuzzHashService.verifyResponseHash internally, so this
-     * genuinely exercises that verification path.
+     * Regression test for the exact bug caught during implementation: a
+     * failed sub-attempt inside the Razorpay Checkout modal must never
+     * cancel the Order or restore stock, since the customer may still be
+     * retrying a different payment method in the same session.
      */
-    private Map<String, String> validSignedResponse(String status) {
+    @Test
+    void verifyPayment_failed_onlyUpdatesPaymentRow_neverCancelsOrder() {
 
-        Map<String, String> fields = new HashMap<>();
-        fields.put("status", status);
-        fields.put("txnid", order.getOrderNumber());
-        fields.put("key", "TESTKEY");
-        fields.put("amount", "2799.00");
-        fields.put("firstname", "Customer Name");
-        fields.put("email", "customer@example.com");
-        fields.put("productinfo", "StyleNest Order");
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
 
-        java.util.List<String> reverseOrderFields = java.util.List.of(
-                "udf10", "udf9", "udf8", "udf7", "udf6", "udf5", "udf4", "udf3", "udf2", "udf1",
-                "email", "firstname", "productinfo", "amount", "txnid", "key");
+        RazorpayVerifyRequest request = RazorpayVerifyRequest.builder()
+                .razorpayOrderId("order_abc123")
+                .razorpayPaymentId("pay_x")
+                .razorpaySignature("sig_x")
+                .build();
 
-        StringBuilder sb = new StringBuilder("TESTSALT").append('|').append(status);
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(paymentProviderClient.verifyPaymentSignature("order_abc123", "pay_x", "sig_x")).thenReturn(true);
+        when(paymentProviderClient.fetchPayment("pay_x"))
+                .thenReturn(new PaymentProviderClient.ProviderPayment(
+                        "pay_x", "order_abc123", "failed", "card", "Card declined by issuer"));
 
-        for (String field : reverseOrderFields) {
-            sb.append('|').append(fields.getOrDefault(field, ""));
-        }
+        RazorpayVerifyResponse response = paymentService.verifyPayment(request);
 
-        fields.put("hash", sha512Hex(sb.toString()));
-
-        return fields;
+        assertThat(payment.getStatus()).isEqualTo(PaymentState.FAILED);
+        assertThat(payment.getFailureReason()).isEqualTo("Card declined by issuer");
+        assertThat(response.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING); // Order untouched
+        verify(orderService, never()).markOnlinePaymentFailed(any());
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+        verify(cartRepository, never()).findByUser(any());
     }
 
-    private String sha512Hex(String input) {
+    // --- handleWebhook ---
 
-        try {
+    @Test
+    void handleWebhook_invalidSignature_throwsAndProcessesNothing() {
 
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-512");
-            byte[] bytes = digest.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(paymentProviderClient.verifyWebhookSignature("{}", "bad-sig")).thenReturn(false);
 
-            StringBuilder hex = new StringBuilder();
-            for (byte b : bytes) {
-                hex.append(String.format("%02x", b));
-            }
+        assertThatThrownBy(() -> paymentService.handleWebhook("{}", "bad-sig", "evt_1"))
+                .isInstanceOf(InvalidPaymentSignatureException.class);
 
-            return hex.toString();
+        verify(webhookEventRepository, never()).existsByEventId(any());
+        verify(paymentRepository, never()).findByProviderOrderId(any());
+    }
 
-        } catch (java.security.NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+    @Test
+    void handleWebhook_duplicateEventId_isIdempotentNoOp() {
+
+        when(paymentProviderClient.verifyWebhookSignature(any(), any())).thenReturn(true);
+        when(webhookEventRepository.existsByEventId("evt_1")).thenReturn(true);
+
+        paymentService.handleWebhook("{\"event\":\"payment.captured\"}", "sig", "evt_1");
+
+        verify(webhookEventRepository, never()).save(any());
+        verify(paymentRepository, never()).findByProviderOrderId(any());
+    }
+
+    @Test
+    void handleWebhook_captured_marksPaidClearsCartAndRecordsEvent() {
+
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+        Cart cart = Cart.builder().id(5L).user(user).items(new ArrayList<>()).currency(Currency.INR).build();
+
+        String body = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":"
+                + "{\"id\":\"pay_x\",\"order_id\":\"order_abc123\",\"status\":\"captured\"}}}}";
+
+        when(paymentProviderClient.verifyWebhookSignature(body, "sig")).thenReturn(true);
+        when(webhookEventRepository.existsByEventId("evt_1")).thenReturn(false);
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+        when(cartRepository.findByUser(user)).thenReturn(Optional.of(cart));
+
+        paymentService.handleWebhook(body, "sig", "evt_1");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentState.CAPTURED);
+        verify(orderService).markOnlinePaymentPaid(order);
+        verify(cartRepository).save(cart);
+
+        var eventCaptor = org.mockito.ArgumentCaptor.forClass(
+                com.stylenest.stylenest_backend.entity.WebhookEvent.class);
+        verify(webhookEventRepository).save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventId()).isEqualTo("evt_1");
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("payment.captured");
+    }
+
+    /**
+     * Same regression as verifyPayment_failed_...: payment.failed can
+     * legitimately fire before an eventual payment.captured for the same
+     * transaction (e.g. a UPI retry after a wrong PIN) -- the webhook path
+     * must never cancel the Order either.
+     */
+    @Test
+    void handleWebhook_paymentFailed_onlyUpdatesPaymentRow_neverCancelsOrder() {
+
+        Payment payment = buildPayment("order_abc123", PaymentState.CREATED);
+
+        String body = "{\"event\":\"payment.failed\",\"payload\":{\"payment\":{\"entity\":"
+                + "{\"id\":\"pay_x\",\"order_id\":\"order_abc123\",\"error_description\":\"Insufficient funds\"}}}}";
+
+        when(paymentProviderClient.verifyWebhookSignature(body, "sig")).thenReturn(true);
+        when(webhookEventRepository.existsByEventId("evt_1")).thenReturn(false);
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+
+        paymentService.handleWebhook(body, "sig", "evt_1");
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentState.FAILED);
+        assertThat(payment.getFailureReason()).isEqualTo("Insufficient funds");
+        verify(orderService, never()).markOnlinePaymentFailed(any());
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+    }
+
+    @Test
+    void handleWebhook_unknownProviderOrderId_isSafelyIgnored() {
+
+        String body = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":"
+                + "{\"id\":\"pay_x\",\"order_id\":\"order_not_ours\",\"status\":\"captured\"}}}}";
+
+        when(paymentProviderClient.verifyWebhookSignature(body, "sig")).thenReturn(true);
+        when(webhookEventRepository.existsByEventId("evt_1")).thenReturn(false);
+        when(paymentRepository.findByProviderOrderId("order_not_ours")).thenReturn(Optional.empty());
+
+        paymentService.handleWebhook(body, "sig", "evt_1");
+
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+        verify(orderService, never()).markOnlinePaymentFailed(any());
+    }
+
+    @Test
+    void handleWebhook_orderAlreadyPaid_isIdempotentAgainstSynchronousVerifyRace() {
+
+        order.setPaymentStatus(PaymentStatus.PAID);
+        Payment payment = buildPayment("order_abc123", PaymentState.CAPTURED);
+
+        String body = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":"
+                + "{\"id\":\"pay_x\",\"order_id\":\"order_abc123\",\"status\":\"captured\"}}}}";
+
+        when(paymentProviderClient.verifyWebhookSignature(body, "sig")).thenReturn(true);
+        when(webhookEventRepository.existsByEventId("evt_1")).thenReturn(false);
+        when(paymentRepository.findByProviderOrderId("order_abc123")).thenReturn(Optional.of(payment));
+
+        paymentService.handleWebhook(body, "sig", "evt_1");
+
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+        verify(cartRepository, never()).findByUser(any());
+    }
+
+    @Test
+    void handleWebhook_irrelevantEventType_isIgnored() {
+
+        String body = "{\"event\":\"order.created\",\"payload\":{\"payment\":{\"entity\":"
+                + "{\"id\":\"pay_x\",\"order_id\":\"order_abc123\"}}}}";
+
+        when(paymentProviderClient.verifyWebhookSignature(body, "sig")).thenReturn(true);
+        when(webhookEventRepository.existsByEventId("evt_1")).thenReturn(false);
+        when(paymentRepository.findByProviderOrderId("order_abc123"))
+                .thenReturn(Optional.of(buildPayment("order_abc123", PaymentState.CREATED)));
+
+        paymentService.handleWebhook(body, "sig", "evt_1");
+
+        verify(orderService, never()).markOnlinePaymentPaid(any());
+        verify(orderService, never()).markOnlinePaymentFailed(any());
     }
 }

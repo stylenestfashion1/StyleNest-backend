@@ -175,11 +175,11 @@ class OrderServiceImplTest {
     @Test
     void placeOrder_rejectsNonCodPaymentMethod() {
 
-        OrderRequest request = OrderRequest.builder().paymentMethod(PaymentMethod.CARD).build();
+        OrderRequest request = OrderRequest.builder().paymentMethod(PaymentMethod.ONLINE).build();
 
         assertThatThrownBy(() -> orderService.placeOrder(request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("easebuzz");
+                .hasMessageContaining("razorpay");
     }
 
     @Test
@@ -265,7 +265,7 @@ class OrderServiceImplTest {
         assertThatThrownBy(() -> orderService.placeOrder(request))
                 .isInstanceOf(UnsupportedPaymentCurrencyException.class);
 
-        // Blocked before any stock decrement, Order row, or Easebuzz contact.
+        // Blocked before any stock decrement, Order row, or Razorpay contact.
         verify(orderRepository, never()).save(any());
         verify(productVariantRepository, never()).save(any());
         assertThat(variant.getStock()).isEqualTo(5); // untouched
@@ -281,7 +281,7 @@ class OrderServiceImplTest {
         when(orderRepository.findByUserAndOrderStatusAndPaymentMethodNot(user, OrderStatus.PENDING, PaymentMethod.COD))
                 .thenReturn(List.of());
 
-        assertThatThrownBy(() -> orderService.reserveOrderForOnlinePayment(PaymentMethod.CARD))
+        assertThatThrownBy(() -> orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE))
                 .isInstanceOf(UnsupportedPaymentCurrencyException.class);
 
         verify(orderRepository, never()).save(any());
@@ -305,9 +305,9 @@ class OrderServiceImplTest {
                 .thenReturn(List.of());
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Order order = orderService.reserveOrderForOnlinePayment(PaymentMethod.CARD);
+        Order order = orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE);
 
-        assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.CARD);
+        assertThat(order.getPaymentMethod()).isEqualTo(PaymentMethod.ONLINE);
         assertThat(order.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(order.getTotalAmount()).isEqualByComparingTo("2000.00");
         assertThat(variant.getStock()).isEqualTo(3); // stock reserved immediately
@@ -327,7 +327,7 @@ class OrderServiceImplTest {
         Order existing = Order.builder()
                 .id(50L)
                 .user(user)
-                .paymentMethod(PaymentMethod.UPI)
+                .paymentMethod(PaymentMethod.ONLINE)
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderStatus(OrderStatus.PENDING)
                 .orderItems(new ArrayList<>(List.of(
@@ -338,7 +338,7 @@ class OrderServiceImplTest {
         when(orderRepository.findByUserAndOrderStatusAndPaymentMethodNot(user, OrderStatus.PENDING, PaymentMethod.COD))
                 .thenReturn(List.of(existing));
 
-        Order result = orderService.reserveOrderForOnlinePayment(PaymentMethod.UPI);
+        Order result = orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE);
 
         assertThat(result).isSameAs(existing);
         verify(orderRepository, never()).save(any());
@@ -356,7 +356,7 @@ class OrderServiceImplTest {
         Order existing = Order.builder()
                 .id(50L)
                 .user(user)
-                .paymentMethod(PaymentMethod.UPI)
+                .paymentMethod(PaymentMethod.ONLINE)
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderStatus(OrderStatus.PENDING)
                 .orderItems(new ArrayList<>(List.of(
@@ -367,7 +367,7 @@ class OrderServiceImplTest {
         when(orderRepository.findByUserAndOrderStatusAndPaymentMethodNot(user, OrderStatus.PENDING, PaymentMethod.COD))
                 .thenReturn(List.of(existing));
 
-        assertThatThrownBy(() -> orderService.reserveOrderForOnlinePayment(PaymentMethod.UPI))
+        assertThatThrownBy(() -> orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE))
                 .isInstanceOf(PendingPaymentExistsException.class);
     }
 
@@ -534,9 +534,9 @@ class OrderServiceImplTest {
     @Test
     void placeGuestOrder_rejectsNonCod() {
 
-        assertThatThrownBy(() -> orderService.placeGuestOrder(guestRequest(PaymentMethod.CARD)))
+        assertThatThrownBy(() -> orderService.placeGuestOrder(guestRequest(PaymentMethod.ONLINE)))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("easebuzz");
+                .hasMessageContaining("razorpay");
     }
 
     @Test
@@ -584,7 +584,7 @@ class OrderServiceImplTest {
                 .thenReturn(List.of());
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Order order = orderService.reserveGuestOrderForOnlinePayment(guestRequest(PaymentMethod.UPI));
+        Order order = orderService.reserveGuestOrderForOnlinePayment(guestRequest(PaymentMethod.ONLINE));
 
         assertThat(order.getUser()).isNull();
         assertThat(order.getGuestEmail()).isEqualTo("guest@example.com");
@@ -601,7 +601,7 @@ class OrderServiceImplTest {
         Order existing = Order.builder()
                 .id(60L)
                 .guestEmail("guest@example.com")
-                .paymentMethod(PaymentMethod.UPI)
+                .paymentMethod(PaymentMethod.ONLINE)
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderStatus(OrderStatus.PENDING)
                 .orderItems(new ArrayList<>(List.of(
@@ -620,7 +620,7 @@ class OrderServiceImplTest {
         // again.
         when(productVariantRepository.findById(1L)).thenReturn(Optional.of(variant));
 
-        Order result = orderService.reserveGuestOrderForOnlinePayment(guestRequest(PaymentMethod.UPI));
+        Order result = orderService.reserveGuestOrderForOnlinePayment(guestRequest(PaymentMethod.ONLINE));
 
         assertThat(result).isSameAs(existing);
         verify(productVariantRepository, never()).save(any());

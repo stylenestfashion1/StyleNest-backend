@@ -231,7 +231,7 @@ public class EmailServiceImpl implements EmailService {
 
         String paymentMethodLabel = data.getPaymentMethod() == PaymentMethod.COD
                 ? "Cash on Delivery"
-                : data.getPaymentMethod().name();
+                : "Online Payment";
 
         String paymentStatusLabel = data.getPaymentStatus() == PaymentStatus.PAID
                 ? "Paid"

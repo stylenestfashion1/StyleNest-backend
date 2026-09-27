@@ -39,7 +39,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * Deliberately COD-only for now (see PaymentMethod check in placeOrder) --
  * these are phone-negotiated wholesale deals settled directly with the shop,
- * not run through the Easebuzz online-payment flow the retail store uses.
+ * not run through the Razorpay online-payment flow the retail store uses.
  * Nothing here prevents adding online payment later; it just isn't wired up
  * yet, and rejecting anything but COD with a clear message is safer than
  * silently accepting a payment method with no real gateway behind it.
