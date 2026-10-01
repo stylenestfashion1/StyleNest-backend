@@ -4,10 +4,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import com.stylenest.stylenest_backend.dto.payment.RazorpayGuestInitiateRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayInitiateResponse;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyResponse;
+import com.stylenest.stylenest_backend.dto.payment.PaymentGuestInitiateRequest;
+import com.stylenest.stylenest_backend.dto.payment.PaymentInitiateResponse;
+import com.stylenest.stylenest_backend.dto.payment.PaymentVerifyRequest;
+import com.stylenest.stylenest_backend.dto.payment.PaymentVerifyResponse;
 import com.stylenest.stylenest_backend.response.ApiResponse;
 import com.stylenest.stylenest_backend.service.PaymentService;
 
@@ -15,14 +15,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/payments/razorpay")
+@RequestMapping("/api/payments")
 @RequiredArgsConstructor
 public class PaymentController {
 
     private final PaymentService paymentService;
 
     @PostMapping("/initiate")
-    public ResponseEntity<ApiResponse<RazorpayInitiateResponse>> initiate() {
+    public ResponseEntity<ApiResponse<PaymentInitiateResponse>> initiate() {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(
@@ -31,8 +31,8 @@ public class PaymentController {
     }
 
     @PostMapping("/guest/initiate")
-    public ResponseEntity<ApiResponse<RazorpayInitiateResponse>> initiateForGuest(
-            @Valid @RequestBody RazorpayGuestInitiateRequest request) {
+    public ResponseEntity<ApiResponse<PaymentInitiateResponse>> initiateForGuest(
+            @Valid @RequestBody PaymentGuestInitiateRequest request) {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(
@@ -41,17 +41,19 @@ public class PaymentController {
     }
 
     /**
-     * Called by our own frontend right after Razorpay Checkout's client-side
-     * success handler fires -- shared by both registered and guest checkout,
-     * since neither carries a StyleNest JWT requirement here: the internal
-     * order is resolved from our own stored providerOrderId, and the
-     * signature is verified server-side before anything is trusted. Must
-     * stay public for the guest case; registered customers hit it the same
-     * way for simplicity, since the request carries no user-scoped data.
+     * Called by our own frontend right after the Cashfree Checkout call
+     * resolves -- shared by both registered and guest checkout, since
+     * neither carries a StyleNest JWT requirement here: the internal
+     * order is resolved from our own stored providerOrderId, and the real
+     * outcome is always independently re-confirmed server-to-server with
+     * Cashfree before anything is trusted (see PaymentServiceImpl). Must
+     * stay public for the guest case; registered customers hit it the
+     * same way for simplicity, since the request carries no user-scoped
+     * data.
      */
     @PostMapping("/verify")
-    public ResponseEntity<ApiResponse<RazorpayVerifyResponse>> verify(
-            @Valid @RequestBody RazorpayVerifyRequest request) {
+    public ResponseEntity<ApiResponse<PaymentVerifyResponse>> verify(
+            @Valid @RequestBody PaymentVerifyRequest request) {
 
         return ResponseEntity.ok(
                 ApiResponse.success(
@@ -60,19 +62,25 @@ public class PaymentController {
     }
 
     /**
-     * Razorpay posts here server-to-server. Must stay public and must
+     * Cashfree posts here server-to-server. Must stay public and must
      * receive the exact raw body -- signature verification depends on the
      * literal bytes, so this deliberately takes a String rather than a
      * parsed DTO (any deserialize-then-reserialize step would risk not
-     * byte-matching what Razorpay actually signed).
+     * byte-matching what Cashfree actually signed). x-idempotency-header is
+     * Cashfree's unique-per-delivery id (webhook versions 2025-01-01+),
+     * used the same way the previous gateway's event id was -- see
+     * PaymentServiceImpl. Optional because an older webhook version
+     * without it must still be processable; the order's own
+     * paymentStatus==PAID check is the real backstop either way.
      */
     @PostMapping("/webhook")
     public ResponseEntity<Void> webhook(
             @RequestBody String rawBody,
-            @RequestHeader("X-Razorpay-Signature") String signature,
-            @RequestHeader(value = "X-Razorpay-Event-Id", required = false) String eventId) {
+            @RequestHeader("x-webhook-signature") String signature,
+            @RequestHeader("x-webhook-timestamp") String timestamp,
+            @RequestHeader(value = "x-idempotency-header", required = false) String idempotencyKey) {
 
-        paymentService.handleWebhook(rawBody, signature, eventId);
+        paymentService.handleWebhook(rawBody, signature, timestamp, idempotencyKey);
 
         return ResponseEntity.ok().build();
     }

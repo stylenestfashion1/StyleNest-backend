@@ -1,18 +1,13 @@
 package com.stylenest.stylenest_backend.service.impl;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylenest.stylenest_backend.dto.order.GuestOrderRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayGuestInitiateRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayInitiateResponse;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyResponse;
+import com.stylenest.stylenest_backend.dto.payment.PaymentGuestInitiateRequest;
+import com.stylenest.stylenest_backend.dto.payment.PaymentInitiateResponse;
+import com.stylenest.stylenest_backend.dto.payment.PaymentVerifyRequest;
+import com.stylenest.stylenest_backend.dto.payment.PaymentVerifyResponse;
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.Payment;
 import com.stylenest.stylenest_backend.entity.User;
@@ -28,27 +23,36 @@ import com.stylenest.stylenest_backend.repository.PaymentRepository;
 import com.stylenest.stylenest_backend.repository.WebhookEventRepository;
 import com.stylenest.stylenest_backend.service.OrderService;
 import com.stylenest.stylenest_backend.service.PaymentProviderClient;
+import com.stylenest.stylenest_backend.service.PaymentProviderClient.PaymentOutcome;
+import com.stylenest.stylenest_backend.service.PaymentProviderClient.ProviderOrderStatus;
+import com.stylenest.stylenest_backend.service.PaymentProviderClient.WebhookEventResult;
 import com.stylenest.stylenest_backend.service.PaymentService;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * Razorpay is the single active payment gateway. Order reservation
+ * Cashfree is the single active payment gateway. Order reservation
  * (stock, address snapshot, USD gating, pending-order dedup) is entirely
  * OrderService's existing responsibility, unchanged by this class -- this
- * service only ever talks to Razorpay for an already-reserved Order.
+ * service only ever talks to Cashfree (via PaymentProviderClient) for an
+ * already-reserved Order.
  *
- * IMPORTANT design note on payment failure: unlike the old Easebuzz
- * integration (a full-page redirect, where a "failure" callback really
- * was the end of that checkout attempt), Razorpay Checkout is an in-page
- * modal that lets the customer retry a different card/UPI/bank within
- * the SAME session after a decline. A payment.failed event for one
- * attempt does NOT mean the customer has abandoned the order -- Razorpay
- * itself documents this exact case (e.g. a UPI retry after a wrong PIN).
- * So a failed attempt here only ever updates the Payment row; it never
- * cancels the Order or restores stock (that stays exclusively the job of
- * the existing, unrelated PUT /api/orders/{id}/cancel flow). This is a
- * deliberate behavior change from the old Easebuzz flow, not an oversight.
+ * IMPORTANT design note on payment failure: like the previous gateway's
+ * in-page modal, Cashfree Checkout (opened in "_modal" mode by the
+ * frontend) lets the customer retry a different card/UPI/bank within the
+ * SAME session after a decline. A failed sub-attempt does NOT mean the
+ * customer has abandoned the order -- so a failed attempt here only ever
+ * updates the Payment row; it never cancels the Order or restores stock
+ * (that stays exclusively the job of the existing, unrelated
+ * PUT /api/orders/{id}/cancel flow).
+ *
+ * Unlike the previous gateway, Cashfree's client-side checkout callback
+ * hands back no signed proof to verify locally -- verifyPayment's job is
+ * simply "look up the real, current status now" via
+ * PaymentProviderClient.fetchOrderStatus, which is exactly as strong a
+ * guarantee (arguably stronger, since there's no client-supplied artifact
+ * to validate at all -- the server-to-server fetch is the only source of
+ * truth, full stop).
  */
 @Service
 @RequiredArgsConstructor
@@ -60,10 +64,9 @@ public class PaymentServiceImpl implements PaymentService {
     private final WebhookEventRepository webhookEventRepository;
     private final CartRepository cartRepository;
     private final PaymentProviderClient paymentProviderClient;
-    private final ObjectMapper objectMapper;
 
     @Override
-    public RazorpayInitiateResponse initiate() {
+    public PaymentInitiateResponse initiate() {
 
         Order order = orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE);
 
@@ -71,7 +74,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public RazorpayInitiateResponse initiateForGuest(RazorpayGuestInitiateRequest request) {
+    public PaymentInitiateResponse initiateForGuest(PaymentGuestInitiateRequest request) {
 
         GuestOrderRequest orderRequest = GuestOrderRequest.builder()
                 .guestEmail(request.getGuestEmail())
@@ -88,48 +91,70 @@ public class PaymentServiceImpl implements PaymentService {
 
     /**
      * Shared by both the registered and guest initiate flows. At most one
-     * Payment row (and one Razorpay order) ever exists per internal Order
-     * -- a Razorpay order accepts multiple payment attempts until one
+     * Payment row (and one gateway order) ever exists per internal Order
+     * -- a Cashfree order accepts multiple payment attempts until one
      * succeeds, so re-calling this against the same still-pending order
      * (a refreshed payment page, or a retry after a declined card) reuses
-     * the existing row/Razorpay order rather than minting a new one.
+     * the existing row/gateway order rather than minting a new one.
      */
-    private RazorpayInitiateResponse completeInitiate(Order order) {
+    private PaymentInitiateResponse completeInitiate(Order order) {
 
-        Payment payment = paymentRepository.findByOrder(order)
-                .orElseGet(() -> {
+        Payment payment = paymentRepository.findByOrder(order).orElse(null);
+        String paymentSessionId;
 
-                    PaymentProviderClient.ProviderOrder providerOrder = paymentProviderClient.createOrder(
-                            order.getTotalAmount(), order.getCurrency(), order.getOrderNumber());
+        if (payment == null) {
 
-                    return paymentRepository.save(Payment.builder()
-                            .order(order)
-                            .provider(PaymentProvider.RAZORPAY)
-                            .providerOrderId(providerOrder.id())
-                            .amount(order.getTotalAmount())
-                            .currency(order.getCurrency())
-                            .status(PaymentState.CREATED)
-                            .build());
-                });
+            // First attempt for this order -- create the gateway order.
+            PaymentProviderClient.CustomerDetails customer = new PaymentProviderClient.CustomerDetails(
+                    "cust-" + order.getId(),
+                    order.getShippingFullName(),
+                    order.getUser() != null ? order.getUser().getEmail() : order.getGuestEmail(),
+                    order.getShippingPhone());
 
-        return RazorpayInitiateResponse.builder()
+            PaymentProviderClient.ProviderOrder providerOrder = paymentProviderClient.createOrder(
+                    order.getTotalAmount(), order.getCurrency(), order.getOrderNumber(), customer);
+
+            payment = paymentRepository.save(Payment.builder()
+                    .order(order)
+                    .provider(PaymentProvider.CASHFREE)
+                    .providerOrderId(providerOrder.providerOrderId())
+                    .amount(order.getTotalAmount())
+                    .currency(order.getCurrency())
+                    .status(PaymentState.CREATED)
+                    .build());
+
+            paymentSessionId = providerOrder.paymentSessionId();
+
+        } else {
+
+            // A gateway order already exists for this Order (refreshed
+            // payment page, retry after a declined card) -- calling
+            // createOrder again for the SAME order_id fails at Cashfree
+            // ("order_already_exists"), so the existing order's current,
+            // still-valid session is fetched instead.
+            paymentSessionId = paymentProviderClient.refreshPaymentSession(payment.getProviderOrderId());
+        }
+
+        return PaymentInitiateResponse.builder()
                 .orderId(order.getId())
                 .orderNumber(order.getOrderNumber())
-                .razorpayOrderId(payment.getProviderOrderId())
-                .razorpayKeyId(paymentProviderClient.publicKeyId())
+                .providerOrderId(payment.getProviderOrderId())
+                .paymentSessionId(paymentSessionId)
                 .amount(order.getTotalAmount())
-                .amountMinor(toMinorUnits(order.getTotalAmount()))
                 .currency(order.getCurrency())
                 .build();
     }
 
     @Override
-    public RazorpayVerifyResponse verifyPayment(RazorpayVerifyRequest request) {
+    public PaymentVerifyResponse verifyPayment(PaymentVerifyRequest request) {
 
         // The trusted lookup: which internal Order this is about is resolved
         // from OUR OWN previously-stored providerOrderId, never from
-        // anything else the client supplies alongside it.
-        Payment payment = paymentRepository.findByProviderOrderId(request.getRazorpayOrderId())
+        // anything else the client supplies alongside it. Row-locked so a
+        // webhook racing this same call for the same order serializes
+        // instead of both applying the paid transition (see
+        // PaymentRepository.findByProviderOrderIdForUpdate).
+        Payment payment = paymentRepository.findByProviderOrderIdForUpdate(request.getProviderOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found for this order."));
 
         Order order = payment.getOrder();
@@ -140,76 +165,44 @@ public class PaymentServiceImpl implements PaymentService {
             return toVerifyResponse(order);
         }
 
-        // Razorpay's own guidance: verify using the order_id already held
-        // server-side (from payment.getProviderOrderId(), resolved above),
-        // never the razorpay_order_id the client echoes back -- even though
-        // the two are guaranteed equal here (findByProviderOrderId only
-        // matched because they're byte-identical), this keeps that
-        // invariant explicit rather than incidental.
-        boolean signatureValid = paymentProviderClient.verifyPaymentSignature(
-                payment.getProviderOrderId(), request.getRazorpayPaymentId(), request.getRazorpaySignature());
+        // Never trust the client alone for the actual outcome -- fetch the
+        // real payment state from Cashfree itself.
+        ProviderOrderStatus status = paymentProviderClient.fetchOrderStatus(payment.getProviderOrderId());
 
-        if (!signatureValid) {
-            throw new InvalidPaymentSignatureException("Payment could not be verified.");
-        }
-
-        // Never trust the signature/client alone for the actual outcome --
-        // fetch the real payment state from Razorpay itself.
-        PaymentProviderClient.ProviderPayment providerPayment =
-                paymentProviderClient.fetchPayment(request.getRazorpayPaymentId());
-
-        if (!payment.getProviderOrderId().equals(providerPayment.orderId())) {
-            // The payment_id genuinely exists at Razorpay, but doesn't
-            // belong to the order we resolved -- never trust the signature
-            // for this pairing regardless of what it claimed.
-            throw new InvalidPaymentSignatureException("Payment could not be verified.");
-        }
-
-        payment.setProviderPaymentId(providerPayment.id());
-        applyProviderStatus(payment, order, providerPayment);
+        applyProviderStatus(payment, order, status);
 
         return toVerifyResponse(order);
     }
 
     @Override
-    public void handleWebhook(String rawBody, String signatureHeader, String eventId) {
+    public void handleWebhook(String rawBody, String signatureHeader, String timestampHeader, String idempotencyKey) {
 
-        if (!paymentProviderClient.verifyWebhookSignature(rawBody, signatureHeader)) {
+        if (!paymentProviderClient.verifyWebhookSignature(rawBody, signatureHeader, timestampHeader)) {
             throw new InvalidPaymentSignatureException("Webhook signature verification failed.");
         }
 
-        // Razorpay retries a webhook delivery on any non-2xx response or a
+        WebhookEventResult event = paymentProviderClient.parseWebhookEvent(rawBody);
+
+        if (event.outcome() == PaymentOutcome.IRRELEVANT || event.providerOrderId() == null) {
+            return; // not one of the event types we act on, or no associated order
+        }
+
+        // Cashfree retries a webhook delivery on any non-2xx response or a
         // slow reply, and the same event can legitimately arrive more than
-        // once even without a retry -- this is the actual idempotency
-        // guarantee (a unique constraint on eventId), not just a lookup.
-        if (eventId != null && webhookEventRepository.existsByEventId(eventId)) {
+        // once even without a retry -- x-idempotency-header (unique per
+        // delivery) is the actual idempotency guarantee, via a unique
+        // constraint, not just a lookup. Older webhook payloads without
+        // this header simply skip the dedup record (never blocks
+        // processing -- the paymentStatus==PAID check below is the real
+        // backstop either way).
+        if (idempotencyKey != null && webhookEventRepository.existsByEventId(idempotencyKey)) {
             return;
         }
 
-        JsonNode payload;
-        try {
-            payload = objectMapper.readTree(rawBody);
-        } catch (Exception e) {
-            return; // malformed body despite a valid signature -- nothing sane to process
-        }
-
-        String eventType = payload.path("event").asText("");
-
-        if (eventId != null) {
-            webhookEventRepository.save(WebhookEvent.builder()
-                    .eventId(eventId)
-                    .eventType(eventType.isBlank() ? "unknown" : eventType)
-                    .build());
-        }
-
-        JsonNode paymentEntity = payload.path("payload").path("payment").path("entity");
-        String providerOrderId = paymentEntity.path("order_id").asText(null);
-
-        if (providerOrderId == null) {
-            return; // an event with no associated order -- not relevant to any Payment row we track
-        }
-
-        Payment payment = paymentRepository.findByProviderOrderId(providerOrderId).orElse(null);
+        // Row-locked for the same reason as verifyPayment's lookup -- this
+        // call can race the frontend's synchronous verify call for the
+        // same order.
+        Payment payment = paymentRepository.findByProviderOrderIdForUpdate(event.providerOrderId()).orElse(null);
 
         if (payment == null) {
             return; // not one of ours -- never throw on an event the webhook shouldn't have sent us
@@ -217,14 +210,11 @@ public class PaymentServiceImpl implements PaymentService {
 
         Order order = payment.getOrder();
 
-        // Only the events actually subscribed to in the Razorpay Dashboard
-        // reach here in practice -- see PHASE 11 in the final report for
-        // why each one is used. Anything else is ignored rather than acted on.
-        boolean isSuccess = "payment.captured".equals(eventType) || "order.paid".equals(eventType);
-        boolean isFailure = "payment.failed".equals(eventType);
-
-        if (!isSuccess && !isFailure) {
-            return;
+        if (idempotencyKey != null) {
+            webhookEventRepository.save(WebhookEvent.builder()
+                    .eventId(idempotencyKey)
+                    .eventType(event.outcome().name())
+                    .build());
         }
 
         // Idempotent against the synchronous verify call already having
@@ -234,21 +224,20 @@ public class PaymentServiceImpl implements PaymentService {
             return;
         }
 
-        String providerPaymentId = paymentEntity.path("id").asText(null);
-        if (providerPaymentId != null) {
-            payment.setProviderPaymentId(providerPaymentId);
+        if (event.providerPaymentId() != null) {
+            payment.setProviderPaymentId(event.providerPaymentId());
         }
 
-        if (isFailure) {
+        if (event.outcome() == PaymentOutcome.FAILURE) {
 
             // See class-level note: a failed attempt never cancels the
-            // Order or restores stock -- the customer may still be
-            // retrying inside the same Razorpay Checkout session.
+            // Order -- the customer may still be retrying inside the same
+            // Cashfree Checkout session.
             payment.setStatus(PaymentState.FAILED);
-            payment.setFailureReason(paymentEntity.path("error_description").asText(null));
+            payment.setFailureReason(event.failureReason());
             paymentRepository.save(payment);
 
-        } else {
+        } else if (event.outcome() == PaymentOutcome.SUCCESS) {
 
             payment.setStatus(PaymentState.CAPTURED);
             paymentRepository.save(payment);
@@ -257,43 +246,35 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     /**
-     * AUTHORIZED != CAPTURED: an authorized-but-uncaptured payment is not
-     * yet money in the merchant's account, and Razorpay auto-refunds it if
-     * it's never captured. Rather than assume the Razorpay Dashboard's
-     * auto-capture setting is on, an authorized payment is explicitly
-     * captured here for the exact server-known order amount.
+     * Cashfree has no separate authorize-then-capture step the way the
+     * previous gateway did -- a SUCCESS outcome from fetchOrderStatus IS
+     * already-settled money, applied directly.
      */
-    private void applyProviderStatus(Payment payment, Order order, PaymentProviderClient.ProviderPayment providerPayment) {
+    private void applyProviderStatus(Payment payment, Order order, ProviderOrderStatus status) {
 
-        switch (providerPayment.status()) {
+        if (status.providerPaymentId() != null) {
+            payment.setProviderPaymentId(status.providerPaymentId());
+        }
 
-            case "captured" -> {
+        switch (status.outcome()) {
+
+            case SUCCESS -> {
                 payment.setStatus(PaymentState.CAPTURED);
                 paymentRepository.save(payment);
                 markPaidAndClearCart(order);
             }
 
-            case "authorized" -> {
-                PaymentProviderClient.ProviderPayment captured = paymentProviderClient.capturePayment(
-                        providerPayment.id(), order.getTotalAmount(), order.getCurrency());
-                boolean nowCaptured = "captured".equals(captured.status());
-                payment.setStatus(nowCaptured ? PaymentState.CAPTURED : PaymentState.AUTHORIZED);
-                paymentRepository.save(payment);
-                if (nowCaptured) {
-                    markPaidAndClearCart(order);
-                }
-            }
-
-            case "failed" -> {
+            case FAILURE -> {
                 // See class-level note: never cancels the Order.
                 payment.setStatus(PaymentState.FAILED);
-                payment.setFailureReason(providerPayment.errorReason());
+                payment.setFailureReason(status.failureReason());
                 paymentRepository.save(payment);
             }
 
             default -> {
-                // created/pending -- nothing resolved yet; the webhook will
-                // eventually deliver a terminal event.
+                // pending/not-yet-attempted -- nothing resolved yet; the
+                // webhook will eventually deliver a terminal event, or the
+                // customer is still inside the Checkout modal.
                 paymentRepository.save(payment);
             }
         }
@@ -318,26 +299,21 @@ public class PaymentServiceImpl implements PaymentService {
         cartRepository.findByUser(user).ifPresent(cart -> {
 
             cart.getItems().clear();
-            cart.setTotalPrice(BigDecimal.ZERO);
+            cart.setTotalPrice(java.math.BigDecimal.ZERO);
             cart.setCurrency(null);
 
             cartRepository.save(cart);
         });
     }
 
-    private RazorpayVerifyResponse toVerifyResponse(Order order) {
+    private PaymentVerifyResponse toVerifyResponse(Order order) {
 
-        return RazorpayVerifyResponse.builder()
+        return PaymentVerifyResponse.builder()
                 .orderId(order.getId())
                 .orderNumber(order.getOrderNumber())
                 .isGuest(order.getUser() == null)
                 .paymentStatus(order.getPaymentStatus())
                 .orderStatus(order.getOrderStatus())
                 .build();
-    }
-
-    /** Razorpay amounts are always the smallest currency subunit (paise for INR, cents for USD) -- both are 2 decimal places, never floating point. */
-    private long toMinorUnits(BigDecimal amount) {
-        return amount.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 }

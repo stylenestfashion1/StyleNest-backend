@@ -4,16 +4,17 @@ package com.stylenest.stylenest_backend.enums;
 // Order.paymentStatus (PENDING/PAID/FAILED/REFUNDED), which stays the
 // single coarse status every existing order/invoice/email/admin call site
 // already reads. This enum exists only on the Payment entity, to record
-// exactly where a given gateway attempt is in Razorpay's own lifecycle
-// without having to rework every existing Order.paymentStatus consumer.
+// exactly where a given gateway attempt is, without having to rework
+// every existing Order.paymentStatus consumer.
 //
-// Maps directly onto Razorpay's own payment.status values (created ->
-// authorized -> captured, or -> failed; refunded/partially_refunded come
-// from the refund APIs/webhooks). AUTHORIZED is NOT the same as CAPTURED:
-// an authorized-but-uncaptured payment is not yet money in the merchant's
-// account and Razorpay auto-refunds it if it's never captured (see
-// PaymentServiceImpl, which explicitly captures rather than assuming the
-// Razorpay Dashboard's auto-capture setting).
+// CREATED -> CAPTURED (success) or -> FAILED is the path Cashfree
+// actually uses -- Cashfree has no separate authorize-then-capture step
+// the way a previous gateway integration did, so a successful payment
+// goes straight to CAPTURED (see PaymentServiceImpl). AUTHORIZED is kept
+// in the schema for generality/possible future use, not something the
+// active Cashfree integration sets. REFUNDED/PARTIALLY_REFUNDED are
+// likewise schema-ready for a future refund feature, not yet wired to
+// any code path.
 public enum PaymentState {
     CREATED,
     AUTHORIZED,

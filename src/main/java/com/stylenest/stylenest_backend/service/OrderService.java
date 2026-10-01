@@ -26,7 +26,7 @@ public interface OrderService {
     /** Ownership-checked the same way as getOrderById. */
     byte[] getInvoicePdf(Long id);
 
-    // --- Internal, used only by PaymentServiceImpl (Razorpay integration) ---
+    // --- Internal, used only by PaymentServiceImpl (Cashfree integration) ---
 
     /**
      * Validates the current user's cart and reserves stock for an online

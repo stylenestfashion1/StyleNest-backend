@@ -1,32 +1,32 @@
 package com.stylenest.stylenest_backend.service;
 
-import com.stylenest.stylenest_backend.dto.payment.RazorpayGuestInitiateRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayInitiateResponse;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyRequest;
-import com.stylenest.stylenest_backend.dto.payment.RazorpayVerifyResponse;
+import com.stylenest.stylenest_backend.dto.payment.PaymentGuestInitiateRequest;
+import com.stylenest.stylenest_backend.dto.payment.PaymentInitiateResponse;
+import com.stylenest.stylenest_backend.dto.payment.PaymentVerifyRequest;
+import com.stylenest.stylenest_backend.dto.payment.PaymentVerifyResponse;
 
 public interface PaymentService {
 
-    /** Registered checkout -- reserves stock against the current user's cart, then creates a Razorpay order for its server-resolved total. */
-    RazorpayInitiateResponse initiate();
+    /** Registered checkout -- reserves stock against the current user's cart, then creates a gateway order for its server-resolved total. */
+    PaymentInitiateResponse initiate();
 
     /** Guest checkout -- same as initiate(), but the order contents come from the request since a guest has no server-side cart. */
-    RazorpayInitiateResponse initiateForGuest(RazorpayGuestInitiateRequest request);
+    PaymentInitiateResponse initiateForGuest(PaymentGuestInitiateRequest request);
 
     /**
-     * Handles Razorpay Checkout's client-side success callback. Verifies
-     * the signature, then independently confirms the payment's real state
-     * with Razorpay itself (never trusts the signature/callback alone) and
-     * captures it if it's only authorized. Idempotent: a repeat call for
-     * an already-resolved order is a no-op.
+     * Handles the frontend's call right after the gateway Checkout call
+     * resolves. Independently confirms the payment's real state with the
+     * gateway itself (never trusts the client alone) and applies it.
+     * Idempotent: a repeat call for an already-resolved order is a no-op.
      */
-    RazorpayVerifyResponse verifyPayment(RazorpayVerifyRequest request);
+    PaymentVerifyResponse verifyPayment(PaymentVerifyRequest request);
 
     /**
-     * Handles a Razorpay webhook delivery. rawBody MUST be the exact,
+     * Handles a gateway webhook delivery. rawBody MUST be the exact,
      * unparsed request body (signature verification depends on the literal
-     * bytes) and signatureHeader the X-Razorpay-Signature header value.
-     * Idempotent against Razorpay's own retries/duplicate deliveries.
+     * bytes). idempotencyKey (Cashfree's x-idempotency-header) may be null
+     * on an older webhook version -- idempotency then falls back entirely
+     * to the order's own paymentStatus==PAID check.
      */
-    void handleWebhook(String rawBody, String signatureHeader, String eventId);
+    void handleWebhook(String rawBody, String signatureHeader, String timestampHeader, String idempotencyKey);
 }

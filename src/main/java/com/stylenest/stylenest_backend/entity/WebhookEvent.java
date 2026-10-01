@@ -8,12 +8,12 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * Records every Razorpay webhook event id we've already processed, purely
- * so a duplicate delivery (Razorpay retries on any non-2xx response or a
- * slow reply, and the same event can legitimately arrive more than once)
- * is a no-op the second time -- see PaymentServiceImpl.handleWebhook. The
- * unique constraint on eventId is the actual idempotency guarantee, not
- * just a lookup convenience.
+ * Records every Cashfree webhook delivery id we've already processed,
+ * purely so a duplicate delivery (Cashfree retries on any non-2xx
+ * response or a slow reply, and the same event can legitimately arrive
+ * more than once) is a no-op the second time -- see
+ * PaymentServiceImpl.handleWebhook. The unique constraint on eventId is
+ * the actual idempotency guarantee, not just a lookup convenience.
  */
 @Entity
 @Table(name = "webhook_events")
@@ -28,7 +28,7 @@ public class WebhookEvent {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Razorpay's X-Razorpay-Event-Id header -- unique per event delivery attempt series.
+    // Cashfree's x-idempotency-header -- unique per webhook delivery attempt.
     @Column(nullable = false, unique = true, length = 64)
     private String eventId;
 

@@ -33,8 +33,9 @@ import com.stylenest.stylenest_backend.repository.InvoiceRepository;
  * Covers the centralized GST engine now that manual gstRate entry has been
  * removed from the product admin: every rate must be derived automatically
  * from the CBIC apparel threshold rule (<=Rs.2500 sale value -> 5%, above
- * -> 18%), using the actual charged price, never the MRP and never a
- * stored Product/BulkProduct.gstRate value (see test7).
+ * -> 18%), using the actual charged price, never the MRP. (Product/BulkProduct
+ * no longer even have a gstRate column to go stale -- it was dropped as dead
+ * code once the engine stopped reading it.)
  */
 @ExtendWith(MockitoExtension.class)
 class InvoiceGenerationServiceImplTest {
@@ -69,14 +70,13 @@ class InvoiceGenerationServiceImplTest {
         });
     }
 
-    private Order retailOrder(BigDecimal mrp, BigDecimal salePrice, String shippingState, BigDecimal staleStoredGstRate) {
+    private Order retailOrder(BigDecimal mrp, BigDecimal salePrice, String shippingState) {
 
         Product product = Product.builder()
                 .id(1L)
                 .name("Test Apparel")
                 .price(mrp)
                 .hsnCode("6109")
-                .gstRate(staleStoredGstRate) // unused DB column -- must never affect the result
                 .build();
 
         ProductVariant variant = ProductVariant.builder()
@@ -111,7 +111,7 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void test1_mrp1500_sale1000_resolvesFivePercent() {
 
-        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh", null);
+        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh");
 
         Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
 
@@ -121,7 +121,7 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void test2_mrp2500_sale2500_atExactThreshold_resolvesFivePercent() {
 
-        Order order = retailOrder(new BigDecimal("2500"), new BigDecimal("2500"), "Madhya Pradesh", null);
+        Order order = retailOrder(new BigDecimal("2500"), new BigDecimal("2500"), "Madhya Pradesh");
 
         Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
 
@@ -131,7 +131,7 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void test3_mrp3000_sale2700_aboveThreshold_resolvesEighteenPercent() {
 
-        Order order = retailOrder(new BigDecimal("3000"), new BigDecimal("2700"), "Madhya Pradesh", null);
+        Order order = retailOrder(new BigDecimal("3000"), new BigDecimal("2700"), "Madhya Pradesh");
 
         Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
 
@@ -142,7 +142,7 @@ class InvoiceGenerationServiceImplTest {
     void test4_mrp3000_sale2400_belowThresholdDespiteHigherMrp_resolvesFivePercent() {
 
         // Proves the slab is decided by the actual SALE value, never the MRP.
-        Order order = retailOrder(new BigDecimal("3000"), new BigDecimal("2400"), "Madhya Pradesh", null);
+        Order order = retailOrder(new BigDecimal("3000"), new BigDecimal("2400"), "Madhya Pradesh");
 
         Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
 
@@ -157,7 +157,7 @@ class InvoiceGenerationServiceImplTest {
         // returned exactly as stored, never regenerated against whatever
         // GstRuleProperties says today.
         Invoice existingInvoice = Invoice.builder().id(99L).invoiceNumber("INV-000099").build();
-        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh", null);
+        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh");
 
         when(invoiceRepository.findByRetailOrder(order)).thenReturn(Optional.of(existingInvoice));
 
@@ -170,7 +170,7 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void test5_interState_usesIgstOnly_neverCgstSgst() {
 
-        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Maharashtra", null);
+        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Maharashtra");
 
         Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
 
@@ -183,7 +183,7 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void test6_intraState_usesCgstAndSgstEqually_neverIgst() {
 
-        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh", null);
+        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh");
 
         Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
 
@@ -194,30 +194,15 @@ class InvoiceGenerationServiceImplTest {
         assertThat(invoice.getIgstAmount()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
-    @Test
-    void test7_staleStoredProductGstRate_isNeverUsed_evenWhenSetToAWrongValue() {
-
-        // Simulates a leftover, no-longer-editable gstRate value sitting in
-        // the DB column from before this change -- the invoice must still
-        // compute 5% from the actual sale price, proving no override path
-        // remains anywhere in the engine.
-        Order order = retailOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh", new BigDecimal("12"));
-
-        Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
-
-        assertThat(invoice.getItems().get(0).getGstRate()).isEqualByComparingTo("5");
-    }
-
     // ---- bulk orders reuse the exact same engine -- no separate GST logic ----
 
-    private BulkOrder bulkOrder(BigDecimal mrp, BigDecimal salePrice, String shippingState, BigDecimal staleStoredGstRate) {
+    private BulkOrder bulkOrder(BigDecimal mrp, BigDecimal salePrice, String shippingState) {
 
         BulkProduct product = BulkProduct.builder()
                 .id(1L)
                 .name("Bulk Test Apparel")
                 .price(mrp)
                 .hsnCode("6109")
-                .gstRate(staleStoredGstRate)
                 .minOrderQuantity(50)
                 .build();
 
@@ -247,7 +232,7 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void bulkOrder_aboveThreshold_resolvesEighteenPercent_sameEngineAsRetail() {
 
-        BulkOrder order = bulkOrder(new BigDecimal("3000"), new BigDecimal("2700"), "Madhya Pradesh", null);
+        BulkOrder order = bulkOrder(new BigDecimal("3000"), new BigDecimal("2700"), "Madhya Pradesh");
 
         Invoice invoice = invoiceGenerationService.generateForBulkOrder(order);
 
@@ -259,22 +244,12 @@ class InvoiceGenerationServiceImplTest {
     @Test
     void bulkOrder_interState_usesIgst_sameEngineAsRetail() {
 
-        BulkOrder order = bulkOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Karnataka", null);
+        BulkOrder order = bulkOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Karnataka");
 
         Invoice invoice = invoiceGenerationService.generateForBulkOrder(order);
 
         assertThat(invoice.isInterState()).isTrue();
         assertThat(invoice.getIgstAmount()).isGreaterThan(BigDecimal.ZERO);
         assertThat(invoice.getCgstAmount()).isEqualByComparingTo(BigDecimal.ZERO);
-    }
-
-    @Test
-    void bulkOrder_staleStoredGstRate_isNeverUsed() {
-
-        BulkOrder order = bulkOrder(new BigDecimal("1500"), new BigDecimal("1000"), "Madhya Pradesh", new BigDecimal("12"));
-
-        Invoice invoice = invoiceGenerationService.generateForBulkOrder(order);
-
-        assertThat(invoice.getItems().get(0).getGstRate()).isEqualByComparingTo("5");
     }
 }

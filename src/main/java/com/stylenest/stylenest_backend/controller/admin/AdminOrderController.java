@@ -14,6 +14,7 @@ import com.stylenest.stylenest_backend.dto.admin.OrderStatusUpdateRequest;
 import com.stylenest.stylenest_backend.dto.invoice.InvoiceResponse;
 import com.stylenest.stylenest_backend.dto.order.OrderResponse;
 import com.stylenest.stylenest_backend.dto.order.OrderSummaryResponse;
+import com.stylenest.stylenest_backend.dto.shipment.DtdcBookingRequest;
 import com.stylenest.stylenest_backend.dto.shipment.ShipmentResponse;
 import com.stylenest.stylenest_backend.dto.shipment.ShipmentUpdateRequest;
 import com.stylenest.stylenest_backend.response.ApiResponse;
@@ -92,6 +93,49 @@ public class AdminOrderController {
                 ApiResponse.success(
                         "Shipment updated successfully",
                         shipmentService.updateShipment(id, request)));
+    }
+
+    @PostMapping("/{id}/shipment/dtdc/book")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> bookDtdcShipment(
+            @PathVariable Long id,
+            @Valid @RequestBody DtdcBookingRequest request) {
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Shipment booked with DTDC",
+                        shipmentService.bookDtdcShipment(id, request)));
+    }
+
+    @PostMapping("/{id}/shipment/dtdc/cancel")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> cancelDtdcShipment(
+            @PathVariable Long id) {
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Shipment cancelled with DTDC",
+                        shipmentService.cancelDtdcShipment(id)));
+    }
+
+    @PostMapping("/{id}/shipment/dtdc/track")
+    public ResponseEntity<ApiResponse<ShipmentResponse>> refreshDtdcTracking(
+            @PathVariable Long id) {
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Tracking refreshed from DTDC",
+                        shipmentService.refreshDtdcTracking(id)));
+    }
+
+    @GetMapping("/{id}/shipment/dtdc/label")
+    public ResponseEntity<byte[]> getDtdcLabel(
+            @PathVariable Long id) {
+
+        byte[] pdf = shipmentService.fetchDtdcLabel(id);
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"DTDC-Label-" + id + ".pdf\"")
+                .body(pdf);
     }
 
     @GetMapping("/{id}/invoice")

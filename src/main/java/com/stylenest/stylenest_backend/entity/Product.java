@@ -73,15 +73,6 @@ public class Product {
     @Column(name = "jeans_code", unique = true, length = 64)
     private String jeansCode;
 
-    // UNUSED as of the GST-engine centralization -- no admin API sets this
-    // anymore, and InvoiceGenerationServiceImpl no longer reads it; every
-    // invoice's GST rate is computed automatically from the CBIC apparel
-    // threshold rule at invoice time. Kept only to avoid a schema migration
-    // (see ProductRequest/ProductResponse -- gstRate was intentionally
-    // removed from both). Safe to drop in a future cleanup.
-    @Column(precision = 5, scale = 2)
-    private BigDecimal gstRate;
-
     @Column(columnDefinition = "TEXT")
     private String careInstructions;
 

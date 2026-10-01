@@ -76,14 +76,6 @@
     <scope>runtime</scope>
 </dependency>
 
-<!-- Razorpay (active payment gateway) -->
-
-<dependency>
-    <groupId>com.razorpay</groupId>
-    <artifactId>razorpay-java</artifactId>
-    <version>1.4.10</version>
-</dependency>
-
 <!-- JWT -->
 
 <dependency>

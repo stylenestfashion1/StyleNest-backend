@@ -17,16 +17,16 @@ import lombok.*;
  * Guest analog of the (implicit, no-body) registered initiate call -- also
  * carries the not-yet-reserved order's contents, since a guest has no
  * server-side cart for OrderService to read from. No paymentMethod/upiVa/
- * bankCode fields: Razorpay Checkout itself is where the customer picks
- * card/UPI/netbanking/wallet, so this endpoint only ever means "start an
- * online payment."
+ * bankCode fields: the gateway's own Checkout UI is where the customer
+ * picks card/UPI/netbanking/wallet, so this endpoint only ever means
+ * "start an online payment."
  */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RazorpayGuestInitiateRequest {
+public class PaymentGuestInitiateRequest {
 
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email")

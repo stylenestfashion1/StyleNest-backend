@@ -179,7 +179,7 @@ class OrderServiceImplTest {
 
         assertThatThrownBy(() -> orderService.placeOrder(request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("razorpay");
+                .hasMessageContaining("/api/payments/initiate");
     }
 
     @Test
@@ -265,7 +265,7 @@ class OrderServiceImplTest {
         assertThatThrownBy(() -> orderService.placeOrder(request))
                 .isInstanceOf(UnsupportedPaymentCurrencyException.class);
 
-        // Blocked before any stock decrement, Order row, or Razorpay contact.
+        // Blocked before any stock decrement, Order row, or Cashfree contact.
         verify(orderRepository, never()).save(any());
         verify(productVariantRepository, never()).save(any());
         assertThat(variant.getStock()).isEqualTo(5); // untouched
@@ -536,7 +536,7 @@ class OrderServiceImplTest {
 
         assertThatThrownBy(() -> orderService.placeGuestOrder(guestRequest(PaymentMethod.ONLINE)))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("razorpay");
+                .hasMessageContaining("/api/payments/guest/initiate");
     }
 
     @Test

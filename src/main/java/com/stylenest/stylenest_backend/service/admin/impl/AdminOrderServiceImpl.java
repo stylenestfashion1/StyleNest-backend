@@ -125,7 +125,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         // Order status and payment status are independent concerns -- this
         // no longer sets paymentStatus as a side effect of an order-status
         // change. Payment status is only ever set by actual payment events
-        // (COD placement, verified Razorpay payment/webhook) in OrderServiceImpl /
+        // (COD placement, verified Cashfree payment/webhook) in OrderServiceImpl /
         // PaymentServiceImpl. Shipment/delivery progression now lives in
         // ShipmentService, not here.
         order.setOrderStatus(request.getOrderStatus());

@@ -83,22 +83,23 @@ public class SecurityConfig {
                         // AUTH
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // RAZORPAY WEBHOOK (Razorpay posts here server-to-
-                        // server with no StyleNest JWT -- authenticated by
-                        // its own HMAC signature instead, verified in
-                        // PaymentServiceImpl.handleWebhook)
+                        // PAYMENT GATEWAY WEBHOOK (Cashfree posts here
+                        // server-to-server with no StyleNest JWT --
+                        // authenticated by its own HMAC signature instead,
+                        // verified in PaymentServiceImpl.handleWebhook)
                         .requestMatchers(HttpMethod.POST,
-                                "/api/payments/razorpay/webhook").permitAll()
+                                "/api/payments/webhook").permitAll()
 
-                        // RAZORPAY VERIFY (called by our frontend right after
-                        // Razorpay Checkout's client-side success handler,
-                        // for both registered and guest checkout -- the
-                        // internal order is resolved from our own stored
+                        // PAYMENT VERIFY (called by our frontend right after
+                        // the Cashfree Checkout call resolves, for both
+                        // registered and guest checkout -- the internal
+                        // order is resolved from our own stored
                         // providerOrderId, never from a client-supplied user
-                        // context, and the signature is verified server-side
-                        // in PaymentServiceImpl.verifyPayment)
+                        // context, and the real outcome is always
+                        // independently re-confirmed server-to-server with
+                        // Cashfree in PaymentServiceImpl.verifyPayment)
                         .requestMatchers(HttpMethod.POST,
-                                "/api/payments/razorpay/verify").permitAll()
+                                "/api/payments/verify").permitAll()
 
                         // GUEST CHECKOUT (no login/registration/OTP -- access
                         // control for tracking/invoice is order-number +
@@ -106,7 +107,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/guest/orders",
                                 "/api/guest/orders/track",
-                                "/api/payments/razorpay/guest/initiate"
+                                "/api/payments/guest/initiate"
                         ).permitAll()
 
                         .requestMatchers(HttpMethod.GET,
@@ -130,6 +131,38 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/discount/verify",
                                 "/api/discount/claim").permitAll()
+
+                        // NAVRATRI RENTAL CATALOG -- PUBLIC CUSTOMER VIEW.
+                        // permitAll here only because a WhatsApp-link visitor
+                        // is never an authenticated User/JWT holder -- real
+                        // access control is the share token itself
+                        // (unguessable, SecureRandom-generated; see
+                        // RentalCatalogServiceImpl). Admin rental endpoints
+                        // live under /api/admin/rental-catalogs/**, already
+                        // covered by the hasRole("ADMIN") /api/admin/** rule
+                        // below. Temporary feature -- safe to remove this
+                        // line plus the whole rental package after Navratri.
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/rental-catalogs/*").permitAll()
+
+                        // NAVRATRI RENTAL BOOKING -- PUBLIC CUSTOMER FLOW.
+                        // Same trust boundary as the catalog view above: no
+                        // StyleNest customer account is ever involved (see
+                        // spec section 8/24), so this permitAll is only at
+                        // the Spring Security layer. Real access control is
+                        // still the share token, re-checked on every one of
+                        // these calls inside RentalBookingServiceImpl /
+                        // RentalSettingsServiceImpl. Admin booking
+                        // management lives under /api/admin/rental-bookings/**
+                        // and /api/admin/rental-settings/**, already covered
+                        // by the hasRole("ADMIN") /api/admin/** rule below.
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/rental-catalogs/*/settings",
+                                "/api/rental-catalogs/*/items/*/unavailable-dates").permitAll()
+
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/rental-catalogs/*/items/*/bookings",
+                                "/api/rental-catalogs/*/bookings/*/payment").permitAll()
 
                         // BULK ORDERS -- ACCESS GATE (public, rate-limited
                         // inside BulkTokenServiceImpl)

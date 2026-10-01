@@ -209,8 +209,8 @@ public class GlobalExceptionHandler {
     }
 
     // International (USD) Payment Not Yet Available -- blocked until the
-    // merchant's Razorpay account is confirmed activated for international
-    // payments; the Order row is never persisted and Razorpay is never
+    // merchant's Cashfree account is confirmed activated for international
+    // payments; the Order row is never persisted and Cashfree is never
     // contacted for this case. See OrderServiceImpl.reserveOrder.
 
     @ExceptionHandler(UnsupportedPaymentCurrencyException.class)
@@ -223,12 +223,25 @@ public class GlobalExceptionHandler {
                 null);
     }
 
-    // Payment Gateway Failure (Razorpay network/API error -- never leak the
+    // Payment Gateway Failure (Cashfree network/API error -- never leak the
     // raw gateway response, which may contain internal details)
 
     @ExceptionHandler(PaymentGatewayException.class)
     public ResponseEntity<ApiResponse<Object>> handlePaymentGateway(
             PaymentGatewayException ex) {
+
+        return buildResponse(
+                HttpStatus.BAD_GATEWAY,
+                ex.getMessage(),
+                null);
+    }
+
+    // DTDC Courier API Failure (network/API error, or DTDC reporting
+    // success=false -- never leak the raw DTDC response)
+
+    @ExceptionHandler(DtdcApiException.class)
+    public ResponseEntity<ApiResponse<Object>> handleDtdcApi(
+            DtdcApiException ex) {
 
         return buildResponse(
                 HttpStatus.BAD_GATEWAY,
@@ -295,8 +308,8 @@ public class GlobalExceptionHandler {
                 null);
     }
 
-    // A required header is missing (e.g. the Razorpay webhook posted
-    // without X-Razorpay-Signature) -- without this, it falls through to
+    // A required header is missing (e.g. the Cashfree webhook posted
+    // without x-webhook-signature/x-webhook-timestamp) -- without this, it falls through to
     // the generic Exception.class handler below as a 500, when it's really
     // just a bad request from whoever/whatever sent it.
     @ExceptionHandler(MissingRequestHeaderException.class)

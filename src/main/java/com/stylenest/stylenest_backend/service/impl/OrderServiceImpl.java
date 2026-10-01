@@ -76,11 +76,11 @@ public class OrderServiceImpl implements OrderService {
     private final ProductPricingService productPricingService;
 
     // Defaults to false so USD is never claimed as payable until the
-    // merchant's Razorpay account is actually confirmed activated for
+    // merchant's Cashfree account is actually confirmed activated for
     // international payments -- flipping this on is a config-only change,
     // never a code change (see reserveOrder's USD guard below).
-    @Value("${razorpay.international-payments-enabled:false}")
-    private boolean razorpayInternationalPaymentsEnabled;
+    @Value("${payment.international-payments-enabled:false}")
+    private boolean onlineInternationalPaymentsEnabled;
 
     private User getCurrentUser() {
 
@@ -108,7 +108,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public OrderResponse placeOrder(OrderRequest request) {
 
-        // Online payments must go through the Razorpay flow, which needs to
+        // Online payments must go through the gateway flow, which needs to
         // reserve the order *before* the customer pays and only clear the
         // cart once payment is verified. COD keeps its original, simpler
         // one-call behavior: reserve and finish in the same request.
@@ -116,7 +116,7 @@ public class OrderServiceImpl implements OrderService {
 
             throw new BadRequestException(
                     "Online payments must be started via "
-                            + "POST /api/payments/razorpay/initiate. "
+                            + "POST /api/payments/initiate. "
                             + "This endpoint only accepts COD.");
         }
 
@@ -224,7 +224,7 @@ public class OrderServiceImpl implements OrderService {
 
             throw new BadRequestException(
                     "Online payments must be started via "
-                            + "POST /api/payments/razorpay/guest/initiate. "
+                            + "POST /api/payments/guest/initiate. "
                             + "This endpoint only accepts COD.");
         }
 
@@ -395,9 +395,9 @@ public class OrderServiceImpl implements OrderService {
      * converge here, which is why the USD block below -- thrown before any
      * Order row is persisted or stock is touched, and before the payment
      * gateway can ever be contacted -- covers every checkout path uniformly.
-     * Gated by razorpayInternationalPaymentsEnabled rather than removed
-     * outright: the code path is Razorpay-ready, but international
-     * payments are never claimed as live until the merchant's Razorpay
+     * Gated by onlineInternationalPaymentsEnabled rather than removed
+     * outright: the code path is Cashfree-ready, but international
+     * payments are never claimed as live until the merchant's Cashfree
      * account is actually confirmed activated for them -- flip the config
      * flag then, no code change needed.
      */
@@ -406,7 +406,7 @@ public class OrderServiceImpl implements OrderService {
             ShippingSnapshot snapshot, List<ReservationLine> lines, PaymentMethod paymentMethod,
             Currency currency) {
 
-        if (currency == Currency.USD && !razorpayInternationalPaymentsEnabled) {
+        if (currency == Currency.USD && !onlineInternationalPaymentsEnabled) {
             throw new UnsupportedPaymentCurrencyException(
                     "International online payments will be available soon. "
                             + "Please try again once international payment support is enabled.");

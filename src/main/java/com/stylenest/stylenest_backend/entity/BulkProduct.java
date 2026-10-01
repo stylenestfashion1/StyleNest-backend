@@ -47,11 +47,6 @@ public class BulkProduct {
     // See InvoiceGenerationServiceImpl.
     private String hsnCode;
 
-    // UNUSED as of the GST-engine centralization -- see Product.gstRate's
-    // javadoc for the full rationale; same applies here.
-    @Column(precision = 5, scale = 2)
-    private BigDecimal gstRate;
-
     // The quantity the admin has configured this product to be ordered in
     // bulk (e.g. 100). Shown to the customer as the default/minimum order
     // quantity; enforced server-side at order time in BulkOrderServiceImpl.

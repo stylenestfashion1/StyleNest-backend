@@ -9,7 +9,7 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RazorpayVerifyResponse {
+public class PaymentVerifyResponse {
 
     private Long orderId;
 
