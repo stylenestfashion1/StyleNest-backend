@@ -45,6 +45,9 @@ class CheckoutServiceImplTest {
     @Mock
     private AddressMapper addressMapper;
 
+    @Mock
+    private com.stylenest.stylenest_backend.service.shipping.ShippingCalculationService shippingCalculationService;
+
     private CheckoutServiceImpl checkoutService;
 
     private User user;
@@ -53,7 +56,7 @@ class CheckoutServiceImplTest {
     void setUp() {
 
         checkoutService = new CheckoutServiceImpl(
-                userRepository, cartRepository, addressRepository, addressMapper);
+                userRepository, cartRepository, addressRepository, addressMapper, shippingCalculationService);
 
         user = User.builder().id(1L).email("customer@example.com").build();
 

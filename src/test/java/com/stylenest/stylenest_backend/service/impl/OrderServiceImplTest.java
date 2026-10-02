@@ -101,6 +101,9 @@ class OrderServiceImplTest {
     @Mock
     private ProductPricingService productPricingService;
 
+    @Mock
+    private com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService dtdcRateCalculatorService;
+
     private OrderMapper orderMapper;
 
     private OrderServiceImpl orderService;
@@ -119,7 +122,14 @@ class OrderServiceImplTest {
                 userRepository, productVariantRepository, cartRepository,
                 addressRepository, orderRepository, shipmentRepository,
                 shipmentHistoryRepository, orderMapper, invoiceService, invoiceGenerationService, emailService,
-                productPricingService);
+                productPricingService, dtdcRateCalculatorService);
+
+        lenient().when(dtdcRateCalculatorService.calculateShipping(any(), any(), any(), any()))
+                .thenReturn(com.stylenest.stylenest_backend.dto.shipping.ShippingCalculationResponse.builder()
+                        .totalShippingFee(BigDecimal.ZERO)
+                        .baseCharge(BigDecimal.ZERO)
+                        .gstAmount(BigDecimal.ZERO)
+                        .build());
 
         user = User.builder().id(1L).email("customer@example.com").fullName("Customer").build();
 

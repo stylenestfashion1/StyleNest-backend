@@ -63,4 +63,19 @@ public class ProductVariant {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
+
+    // Physical shipping & packaging master data (grams and centimeters).
+    // Nullable -- existing variants work without these values until admin populates them.
+    // Used for automatic DTDC shipment booking.
+    @Column(name = "shipping_weight_grams")
+    private java.math.BigDecimal shippingWeightGrams;
+
+    @Column(name = "package_length_cm")
+    private java.math.BigDecimal packageLengthCm;
+
+    @Column(name = "package_width_cm")
+    private java.math.BigDecimal packageWidthCm;
+
+    @Column(name = "package_height_cm")
+    private java.math.BigDecimal packageHeightCm;
 }

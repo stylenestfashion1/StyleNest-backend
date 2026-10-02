@@ -119,6 +119,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/postal-lookup").permitAll()
 
+                        // SHIPPING RATE CALCULATION (read-only calculation -- needed
+                        // for both guest and registered checkout)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/shipping/calculate").permitAll()
+
                         // IN-STORE QR DISCOUNT -- CUSTOMER FLOW. permitAll here
                         // only because a shop customer scanning the QR is never
                         // an authenticated User/JWT holder -- the real

@@ -32,6 +32,8 @@ public class OrderResponse {
 
     private BigDecimal totalAmount;
 
+    private BigDecimal shippingFee;
+
     private PaymentMethod paymentMethod;
 
     private PaymentStatus paymentStatus;

@@ -80,6 +80,10 @@ public class Order {
     @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();
 
+    @Builder.Default
+    @Column(nullable = false)
+    private BigDecimal shippingFee = BigDecimal.ZERO;
+
     @Column(nullable = false)
     private BigDecimal totalAmount;
 

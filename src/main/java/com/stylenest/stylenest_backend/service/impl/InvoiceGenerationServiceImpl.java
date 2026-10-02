@@ -85,6 +85,8 @@ public class InvoiceGenerationServiceImpl implements InvoiceGenerationService {
                     ? order.getUser().getEmail()
                     : order.getGuestEmail();
 
+            BigDecimal shippingFee = order.getShippingFee() != null ? order.getShippingFee() : BigDecimal.ZERO;
+
             Invoice invoice = buildInvoice(
                     InvoiceOrderType.RETAIL,
                     customerName,
@@ -99,7 +101,8 @@ public class InvoiceGenerationServiceImpl implements InvoiceGenerationService {
                     lines,
                     interState,
                     order.getPaymentMethod().name(),
-                    order.getPaymentStatus().name());
+                    order.getPaymentStatus().name(),
+                    shippingFee);
 
             invoice.setRetailOrder(order);
 
@@ -132,7 +135,8 @@ public class InvoiceGenerationServiceImpl implements InvoiceGenerationService {
                     lines,
                     interState,
                     bulkOrder.getPaymentMethod().name(),
-                    bulkOrder.getPaymentStatus().name());
+                    bulkOrder.getPaymentStatus().name(),
+                    BigDecimal.ZERO);
 
             invoice.setBulkOrder(bulkOrder);
 
@@ -245,7 +249,8 @@ public class InvoiceGenerationServiceImpl implements InvoiceGenerationService {
             String customerName, String customerEmail, String customerPhone,
             String addressLine1, String addressLine2, String city, String state, String postalCode, String country,
             List<LineInput> lines, boolean interState,
-            String paymentMethod, String paymentStatus) {
+            String paymentMethod, String paymentStatus,
+            BigDecimal shippingCharge) {
 
         Invoice invoice = Invoice.builder()
                 .orderType(orderType)
@@ -299,6 +304,24 @@ public class InvoiceGenerationServiceImpl implements InvoiceGenerationService {
                 BigDecimal half = taxAt(item.getTaxableAmount(), item.getGstRate().divide(BigDecimal.valueOf(2)));
                 cgstTotal = cgstTotal.add(half);
                 sgstTotal = sgstTotal.add(half);
+            }
+        }
+
+        if (shippingCharge != null && shippingCharge.compareTo(BigDecimal.ZERO) > 0) {
+            invoice.setShippingCharge(shippingCharge);
+            chargedTotal = chargedTotal.add(shippingCharge);
+
+            // 18% GST included in shippingCharge:
+            BigDecimal taxableShipping = shippingCharge.divide(BigDecimal.valueOf(1.18), 2, RoundingMode.HALF_UP);
+            BigDecimal gstShipping = shippingCharge.subtract(taxableShipping);
+            taxableTotal = taxableTotal.add(taxableShipping);
+
+            if (interState) {
+                igstTotal = igstTotal.add(gstShipping);
+            } else {
+                BigDecimal halfGst = gstShipping.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+                cgstTotal = cgstTotal.add(halfGst);
+                sgstTotal = sgstTotal.add(gstShipping.subtract(halfGst));
             }
         }
 

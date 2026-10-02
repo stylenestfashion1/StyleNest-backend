@@ -114,4 +114,51 @@ class DtdcShippingProviderClientTest {
         assertThat(client.mapDtdcStatus("", "Pickup Scheduled")).isEqualTo(ShipmentStatus.PACKED);
         assertThat(client.mapDtdcStatus("", "Booked")).isEqualTo(ShipmentStatus.PACKED);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildBookingBody_codShipment_includesRequiredFields() {
+
+        var body = client.buildBookingBody(sampleRequest());
+        var consignments = (java.util.List<java.util.Map<String, Object>>) body.get("consignments");
+        assertThat(consignments).hasSize(1);
+
+        var consignment = consignments.get(0);
+        assertThat(consignment.get("description")).isEqualTo("");
+        assertThat(consignment.get("consignment_type")).isEqualTo("Forward");
+        assertThat(consignment.get("dimension_unit")).isEqualTo("CM");
+        assertThat(consignment.get("weight_unit")).isEqualTo("KG");
+        assertThat(consignment.get("is_risk_surcharge_applicable")).isEqualTo(false);
+        assertThat(consignment.get("cod_favor_of")).isEqualTo("");
+
+        var origin = (java.util.Map<String, Object>) consignment.get("origin_details");
+        assertThat(origin.get("alternate_phone")).isEqualTo("");
+
+        var destination = (java.util.Map<String, Object>) consignment.get("destination_details");
+        assertThat(destination.get("alternate_phone")).isEqualTo("");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildBookingBody_prepaidShipment_includesCodFavorOfAsEmptyString() {
+
+        var prepaidRequest = new ShipmentBookingRequest(
+                "SN-2", "Prepaid Customer", "9999999999", "Line 1", "",
+                "Salem", "Tamil Nadu", "636010",
+                false, null, new BigDecimal("1500.00"),
+                new BigDecimal("1.0"), new BigDecimal("30"), new BigDecimal("20"), new BigDecimal("10"), 1);
+
+        var body = client.buildBookingBody(prepaidRequest);
+        var consignments = (java.util.List<java.util.Map<String, Object>>) body.get("consignments");
+        var consignment = consignments.get(0);
+
+        assertThat(consignment.get("description")).isEqualTo("");
+        assertThat(consignment.get("cod_favor_of")).isEqualTo("");
+
+        var origin = (java.util.Map<String, Object>) consignment.get("origin_details");
+        assertThat(origin.get("alternate_phone")).isEqualTo("");
+
+        var destination = (java.util.Map<String, Object>) consignment.get("destination_details");
+        assertThat(destination.get("alternate_phone")).isEqualTo("");
+    }
 }

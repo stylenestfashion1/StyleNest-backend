@@ -95,6 +95,21 @@ public class Product {
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
+    // Physical shipping & packaging master data (grams and centimeters).
+    // Nullable product-level baseline -- variants can override these individually.
+    // Used for automatic DTDC shipment booking.
+    @Column(name = "shipping_weight_grams")
+    private BigDecimal shippingWeightGrams;
+
+    @Column(name = "package_length_cm")
+    private BigDecimal packageLengthCm;
+
+    @Column(name = "package_width_cm")
+    private BigDecimal packageWidthCm;
+
+    @Column(name = "package_height_cm")
+    private BigDecimal packageHeightCm;
+
      
 
     @OneToMany(

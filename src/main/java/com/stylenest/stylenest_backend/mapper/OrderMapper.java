@@ -41,6 +41,7 @@ public class OrderMapper {
                 .orderNumber(order.getOrderNumber())
                 .currency(order.getCurrency())
                 .totalAmount(order.getTotalAmount())
+                .shippingFee(order.getShippingFee())
                 .paymentMethod(order.getPaymentMethod())
                 .paymentStatus(order.getPaymentStatus())
                 .orderStatus(order.getOrderStatus())

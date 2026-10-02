@@ -25,4 +25,12 @@ public class ProductVariantResponse {
     private String sku;
 
     private List<ProductImageResponse> images;
+
+    private java.math.BigDecimal shippingWeightGrams;
+
+    private java.math.BigDecimal packageLengthCm;
+
+    private java.math.BigDecimal packageWidthCm;
+
+    private java.math.BigDecimal packageHeightCm;
 }

@@ -29,6 +29,10 @@ public class ProductMapper {
                 .featured(request.getFeatured())
                 .trending(request.getTrending())
                 .active(request.getActive())
+                .shippingWeightGrams(request.getShippingWeightGrams())
+                .packageLengthCm(request.getPackageLengthCm())
+                .packageWidthCm(request.getPackageWidthCm())
+                .packageHeightCm(request.getPackageHeightCm())
                 .build();
     }
 
@@ -81,6 +85,10 @@ public class ProductMapper {
                 .gender(product.getCategory().getGender())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
+                .shippingWeightGrams(product.getShippingWeightGrams())
+                .packageLengthCm(product.getPackageLengthCm())
+                .packageWidthCm(product.getPackageWidthCm())
+                .packageHeightCm(product.getPackageHeightCm())
                 .build();
     }
 
@@ -98,5 +106,9 @@ public class ProductMapper {
         product.setFeatured(request.getFeatured());
         product.setTrending(request.getTrending());
         product.setActive(request.getActive());
+        product.setShippingWeightGrams(request.getShippingWeightGrams());
+        product.setPackageLengthCm(request.getPackageLengthCm());
+        product.setPackageWidthCm(request.getPackageWidthCm());
+        product.setPackageHeightCm(request.getPackageHeightCm());
     }
 }

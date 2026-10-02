@@ -7,7 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -48,6 +51,8 @@ public class DtdcShippingProviderClient implements CourierTrackingService {
     private static final String STAGING_BASE_URL = "https://alphademodashboardapi.shipsy.io";
     private static final String PROD_TRACKING_BASE_URL = "https://blktracksvc.dtdc.com";
     private static final String STAGING_TRACKING_BASE_URL = "https://dtdcstagingapi.dtdc.com";
+
+    private static final Logger log = LoggerFactory.getLogger(DtdcShippingProviderClient.class);
 
     // The shipping-label variant a warehouse actually prints and sticks on
     // a parcel -- the other label_code options (A4/A6/POD/route/address/
@@ -138,9 +143,63 @@ public class DtdcShippingProviderClient implements CourierTrackingService {
     @Override
     public BookingResult bookShipment(ShipmentBookingRequest request) {
 
+        Map<String, Object> body = buildBookingBody(request);
+
+        try {
+
+            ResponseEntity<JsonNode> responseEntity = client().post()
+                    .uri("/api/customer/integration/consignment/softdata")
+                    .body(body)
+                    .retrieve()
+                    .toEntity(JsonNode.class);
+
+            int httpStatus = responseEntity.getStatusCode().value();
+            JsonNode response = responseEntity.getBody();
+
+            if (response == null) {
+                log.warn("DTDC booking response empty: httpStatus={}, orderReference={}",
+                        httpStatus, request.customerReferenceNumber());
+                throw new DtdcApiException("DTDC returned an empty response.");
+            }
+
+            JsonNode first = response.path("data").path(0);
+
+            if (!first.path("success").asBoolean(false)) {
+                log.warn("DTDC booking rejected: httpStatus={}, orderReference={}, body={}",
+                        httpStatus, request.customerReferenceNumber(), response);
+                throw new DtdcApiException("DTDC could not book this shipment: " + extractFailureReason(first));
+            }
+
+            log.info("DTDC booking accepted: httpStatus={}, orderReference={}, body={}",
+                    httpStatus, request.customerReferenceNumber(), response);
+
+            String referenceNumber = first.path("reference_number").asText(null);
+
+            if (referenceNumber == null || referenceNumber.isBlank()) {
+                throw new DtdcApiException("DTDC did not return a reference number for this shipment.");
+            }
+
+            return new BookingResult(referenceNumber);
+
+        } catch (DtdcApiException e) {
+            throw e;
+        } catch (RestClientResponseException e) {
+            log.warn("DTDC booking HTTP error: httpStatus={}, orderReference={}, responseBody={}",
+                    e.getStatusCode().value(), request.customerReferenceNumber(), e.getResponseBodyAsString());
+            throw new DtdcApiException("Could not reach DTDC to book this shipment. Please try again.");
+        } catch (RestClientException e) {
+            log.warn("DTDC booking communication failure: orderReference={}, error={}",
+                    request.customerReferenceNumber(), e.getMessage());
+            throw new DtdcApiException("Could not reach DTDC to book this shipment. Please try again.");
+        }
+    }
+
+    Map<String, Object> buildBookingBody(ShipmentBookingRequest request) {
+
         Map<String, Object> origin = new LinkedHashMap<>();
         origin.put("name", originName);
         origin.put("phone", originPhone);
+        origin.put("alternate_phone", "");
         origin.put("address_line_1", originAddressLine1);
         origin.put("pincode", originPincode);
         origin.put("city", originCity);
@@ -149,6 +208,7 @@ public class DtdcShippingProviderClient implements CourierTrackingService {
         Map<String, Object> destination = new LinkedHashMap<>();
         destination.put("name", request.consigneeName());
         destination.put("phone", request.consigneePhone());
+        destination.put("alternate_phone", "");
         destination.put("address_line_1", request.consigneeAddressLine1());
         destination.put("address_line_2", request.consigneeAddressLine2() == null ? "" : request.consigneeAddressLine2());
         destination.put("pincode", request.consigneePincode());
@@ -159,12 +219,13 @@ public class DtdcShippingProviderClient implements CourierTrackingService {
         consignment.put("customer_code", customerCode);
         consignment.put("service_type_id", serviceTypeId);
         consignment.put("load_type", "NON-DOCUMENT");
+        consignment.put("description", "");
         consignment.put("consignment_type", "Forward");
-        consignment.put("dimension_unit", "cm");
+        consignment.put("dimension_unit", "CM");
         consignment.put("length", request.lengthCm().toPlainString());
         consignment.put("width", request.widthCm().toPlainString());
         consignment.put("height", request.heightCm().toPlainString());
-        consignment.put("weight_unit", "kg");
+        consignment.put("weight_unit", "KG");
         consignment.put("weight", request.weightKg().toPlainString());
         consignment.put("declared_value", request.declaredValue().toPlainString());
         consignment.put("num_pieces", String.valueOf(request.numPieces()));
@@ -174,37 +235,11 @@ public class DtdcShippingProviderClient implements CourierTrackingService {
         consignment.put("cod_collection_mode", request.cashOnDelivery() ? "CASH" : "");
         consignment.put("cod_amount",
                 request.cashOnDelivery() && request.codAmount() != null ? request.codAmount().toPlainString() : "");
+        consignment.put("cod_favor_of", "");
         consignment.put("commodity_id", commodityId);
-        consignment.put("is_risk_surcharge_applicable", "false");
+        consignment.put("is_risk_surcharge_applicable", false);
 
-        Map<String, Object> body = Map.of("consignments", List.of(consignment));
-
-        try {
-
-            JsonNode response = client().post()
-                    .uri("/api/customer/integration/consignment/softdata")
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
-
-            JsonNode first = response.path("data").path(0);
-
-            if (!first.path("success").asBoolean(false)) {
-                throw new DtdcApiException("DTDC could not book this shipment: " + extractFailureReason(first));
-            }
-
-            String referenceNumber = first.path("reference_number").asText(null);
-
-            if (referenceNumber == null || referenceNumber.isBlank()) {
-                throw new DtdcApiException("DTDC did not return a reference number for this shipment.");
-            }
-
-            return new BookingResult(referenceNumber);
-
-        } catch (RestClientException e) {
-
-            throw new DtdcApiException("Could not reach DTDC to book this shipment. Please try again.");
-        }
+        return Map.of("consignments", List.of(consignment));
     }
 
     @Override

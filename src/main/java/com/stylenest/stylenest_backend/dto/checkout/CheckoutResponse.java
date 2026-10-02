@@ -19,9 +19,11 @@ public class CheckoutResponse {
     private AddressResponse shippingAddress;
 
     // Null only for a genuinely empty cart -- lets the frontend show the
-    // USD-checkout-blocked state before the customer attempts to place an
-    // order, not just after the backend rejects it.
     private Currency currency;
+
+    private BigDecimal subtotalAmount;
+
+    private BigDecimal shippingFee;
 
     private BigDecimal totalAmount;
 }

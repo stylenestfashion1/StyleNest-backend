@@ -34,6 +34,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final CartRepository cartRepository;
     private final AddressRepository addressRepository;
     private final AddressMapper addressMapper;
+    private final com.stylenest.stylenest_backend.service.shipping.ShippingCalculationService shippingCalculationService;
 
     private User getCurrentUser() {
 
@@ -82,11 +83,17 @@ public class CheckoutServiceImpl implements CheckoutService {
         AddressResponse addressResponse =
                 addressMapper.toResponse(defaultAddress);
 
+        BigDecimal subtotal = cart.get().getTotalPrice();
+        BigDecimal shippingFee = shippingCalculationService.calculateForCart(cart.get(), defaultAddress);
+        BigDecimal grandTotal = subtotal.add(shippingFee != null ? shippingFee : BigDecimal.ZERO);
+
         return CheckoutResponse.builder()
                 .items(items)
                 .shippingAddress(addressResponse)
                 .currency(cart.get().getCurrency())
-                .totalAmount(cart.get().getTotalPrice())
+                .subtotalAmount(subtotal)
+                .shippingFee(shippingFee)
+                .totalAmount(grandTotal)
                 .build();
     }
 
@@ -100,6 +107,8 @@ public class CheckoutServiceImpl implements CheckoutService {
         return CheckoutResponse.builder()
                 .items(List.of())
                 .shippingAddress(addressResponse)
+                .subtotalAmount(BigDecimal.ZERO)
+                .shippingFee(BigDecimal.ZERO)
                 .totalAmount(BigDecimal.ZERO)
                 .build();
     }

@@ -20,6 +20,10 @@ public class ProductVariantMapper {
                 .colorHex(request.getColorHex())
                 .size(request.getSize())
                 .stock(request.getStock())
+                .shippingWeightGrams(request.getShippingWeightGrams())
+                .packageLengthCm(request.getPackageLengthCm())
+                .packageWidthCm(request.getPackageWidthCm())
+                .packageHeightCm(request.getPackageHeightCm())
                 .build();
     }
 
@@ -39,6 +43,10 @@ public class ProductVariantMapper {
                 .stock(variant.getStock())
                 .sku(variant.getSku())
                 .images(images == null ? Collections.emptyList() : images)
+                .shippingWeightGrams(variant.getShippingWeightGrams())
+                .packageLengthCm(variant.getPackageLengthCm())
+                .packageWidthCm(variant.getPackageWidthCm())
+                .packageHeightCm(variant.getPackageHeightCm())
                 .build();
     }
 
@@ -48,6 +56,9 @@ public class ProductVariantMapper {
         variant.setColorHex(request.getColorHex());
         variant.setSize(request.getSize());
         variant.setStock(request.getStock());
-
+        variant.setShippingWeightGrams(request.getShippingWeightGrams());
+        variant.setPackageLengthCm(request.getPackageLengthCm());
+        variant.setPackageWidthCm(request.getPackageWidthCm());
+        variant.setPackageHeightCm(request.getPackageHeightCm());
     }
 }

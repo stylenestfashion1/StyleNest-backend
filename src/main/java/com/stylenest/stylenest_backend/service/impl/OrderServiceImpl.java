@@ -1,6 +1,7 @@
 package com.stylenest.stylenest_backend.service.impl;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -74,6 +75,7 @@ public class OrderServiceImpl implements OrderService {
     private final InvoiceGenerationService invoiceGenerationService;
     private final EmailService emailService;
     private final ProductPricingService productPricingService;
+    private final com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService dtdcRateCalculatorService;
 
     // Defaults to false so USD is never claimed as payable until the
     // merchant's Cashfree account is actually confirmed activated for
@@ -473,7 +475,28 @@ public class OrderServiceImpl implements OrderService {
             );
         }
 
-        order.setTotalAmount(totalAmount);
+        BigDecimal shippingFee = BigDecimal.ZERO;
+        if (snapshot.postalCode() != null && !snapshot.postalCode().isBlank()) {
+            List<com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService.PhysicalItemSpec> itemSpecs = new ArrayList<>();
+            for (OrderItem oi : order.getOrderItems()) {
+                itemSpecs.add(com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService.PhysicalItemSpec.fromVariant(
+                        oi.getProductVariant(),
+                        oi.getQuantity()
+                ));
+            }
+            if (!itemSpecs.isEmpty()) {
+                var calc = dtdcRateCalculatorService.calculateShipping(
+                        snapshot.postalCode(),
+                        snapshot.city(),
+                        snapshot.state(),
+                        itemSpecs
+                );
+                shippingFee = calc.getTotalShippingFee();
+            }
+        }
+
+        order.setShippingFee(shippingFee);
+        order.setTotalAmount(totalAmount.add(shippingFee));
 
         Order savedOrder = orderRepository.save(order);
 
