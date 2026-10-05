@@ -65,6 +65,8 @@ public class ProductResponse {
             + "if the product has no variants.")
     private List<String> availableColors;
 
+    private Long categoryId;
+
     private String categoryName;
 
     // The category's own full, gender-prefixed slug (e.g. "women-kurti" --
