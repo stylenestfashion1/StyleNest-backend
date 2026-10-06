@@ -37,6 +37,7 @@ import com.stylenest.stylenest_backend.mapper.ShipmentMapper;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentHistoryRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
+import com.stylenest.stylenest_backend.service.EmailService;
 import com.stylenest.stylenest_backend.service.courier.CourierTrackingService;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +55,9 @@ class ShipmentServiceImplTest {
     @Mock
     private CourierTrackingService courierTrackingService;
 
+    @Mock
+    private EmailService emailService;
+
     private ShipmentServiceImpl shipmentService;
 
     private Order order;
@@ -63,7 +67,7 @@ class ShipmentServiceImplTest {
     void setUp() {
 
         shipmentService = new ShipmentServiceImpl(
-                orderRepository, shipmentRepository, shipmentHistoryRepository, new ShipmentMapper(), courierTrackingService);
+                orderRepository, shipmentRepository, shipmentHistoryRepository, new ShipmentMapper(), courierTrackingService, emailService);
 
         order = Order.builder()
                 .id(1L)

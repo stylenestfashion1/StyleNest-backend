@@ -32,8 +32,8 @@ public class DtdcRateCalculatorService {
     public enum DtdcZone {
         LOCAL(BigDecimal.valueOf(36.00), BigDecimal.valueOf(25.00), "1-2 Business Days"),
         REGIONAL(BigDecimal.valueOf(39.00), BigDecimal.valueOf(28.00), "2-3 Business Days"),
-        METRO(BigDecimal.valueOf(54.00), BigDecimal.valueOf(39.00), "3-4 Business Days"),
-        ROI(BigDecimal.valueOf(57.00), BigDecimal.valueOf(40.00), "4-5 Business Days"),
+        METRO(BigDecimal.valueOf(54.00), BigDecimal.valueOf(39.00), "3-5 Business Days"),
+        ROI(BigDecimal.valueOf(57.00), BigDecimal.valueOf(40.00), "4-6 Business Days"),
         SPL_DEST(BigDecimal.valueOf(66.00), BigDecimal.valueOf(50.00), "5-7 Business Days");
 
         private final BigDecimal baseRate500g;
@@ -197,11 +197,11 @@ public class DtdcRateCalculatorService {
         }
 
         BigDecimal gstAmount = baseCharge.multiply(GST_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal totalShippingFee = baseCharge.add(gstAmount).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalShippingFee = baseCharge.add(gstAmount).setScale(0, RoundingMode.CEILING).setScale(2, RoundingMode.UNNECESSARY);
 
         return ShippingCalculationResponse.builder()
                 .zone(zone.name())
-                .serviceType("DTDC Ground Express (7D)")
+                .serviceType("DTDC Ground Economy")
                 .chargeableWeightGrams(totalWeightGrams.setScale(0, RoundingMode.HALF_UP))
                 .baseCharge(baseCharge.setScale(2, RoundingMode.HALF_UP))
                 .gstAmount(gstAmount)

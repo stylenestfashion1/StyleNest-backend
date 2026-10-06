@@ -23,4 +23,8 @@ public interface EmailService {
     void sendInvoiceEmail(
             String toEmail, String customerName, String invoiceNumber,
             String orderReference, BigDecimal totalAmount, byte[] invoicePdfBytes);
+
+    void sendShipmentUpdateEmail(
+            String toEmail, String customerName, String orderNumber,
+            String courierName, String trackingNumber, com.stylenest.stylenest_backend.enums.ShipmentStatus shipmentStatus);
 }

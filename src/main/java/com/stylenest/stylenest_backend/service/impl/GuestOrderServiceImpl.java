@@ -35,6 +35,8 @@ public class GuestOrderServiceImpl implements GuestOrderService {
     private final OrderMapper orderMapper;
     private final InvoiceService invoiceService;
     private final InvoiceGenerationService invoiceGenerationService;
+    private final com.stylenest.stylenest_backend.service.ShipmentService shipmentService;
+    private final com.stylenest.stylenest_backend.repository.ShipmentRepository shipmentRepository;
 
     @Override
     public OrderResponse placeOrder(GuestOrderRequest request) {
@@ -43,12 +45,34 @@ public class GuestOrderServiceImpl implements GuestOrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public OrderResponse trackOrder(GuestOrderTrackingRequest request) {
 
         Order order = findVerifiedGuestOrder(request.getOrderNumber(), request.getPhone());
 
-        return orderMapper.toResponse(order);
+        refreshDtdcTrackingSilently(order);
+
+        Order freshOrder = orderRepository.findById(order.getId()).orElse(order);
+
+        return orderMapper.toResponse(freshOrder);
+    }
+
+    private void refreshDtdcTrackingSilently(Order order) {
+        try {
+            var shipmentOpt = shipmentRepository.findByOrder(order);
+            if (shipmentOpt.isPresent()) {
+                var shipment = shipmentOpt.get();
+                if ("DTDC".equalsIgnoreCase(shipment.getCourierName())
+                        && shipment.getTrackingNumber() != null
+                        && !shipment.getTrackingNumber().isBlank()
+                        && shipment.getShipmentStatus() != com.stylenest.stylenest_backend.enums.ShipmentStatus.DELIVERED
+                        && shipment.getShipmentStatus() != com.stylenest.stylenest_backend.enums.ShipmentStatus.CANCELLED
+                        && shipment.getShipmentStatus() != com.stylenest.stylenest_backend.enums.ShipmentStatus.RETURNED) {
+                    shipmentService.refreshDtdcTracking(order.getId());
+                }
+            }
+        } catch (Exception ignored) {
+            // Best-effort live refresh: cached tracking info still served if DTDC is slow
+        }
     }
 
     @Override

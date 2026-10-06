@@ -22,23 +22,18 @@ import lombok.*;
 @Builder
 public class DtdcBookingRequest {
 
-    @NotNull(message = "weightKg is required")
     @DecimalMin(value = "0.01", message = "weightKg must be greater than 0")
     private BigDecimal weightKg;
 
-    @NotNull(message = "lengthCm is required")
     @DecimalMin(value = "0.1", message = "lengthCm must be greater than 0")
     private BigDecimal lengthCm;
 
-    @NotNull(message = "widthCm is required")
     @DecimalMin(value = "0.1", message = "widthCm must be greater than 0")
     private BigDecimal widthCm;
 
-    @NotNull(message = "heightCm is required")
     @DecimalMin(value = "0.1", message = "heightCm must be greater than 0")
     private BigDecimal heightCm;
 
     @Min(value = 1, message = "numPieces must be at least 1")
-    @Builder.Default
-    private Integer numPieces = 1;
+    private Integer numPieces;
 }

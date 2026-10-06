@@ -1,12 +1,18 @@
 package com.stylenest.stylenest_backend.service.impl;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.stylenest.stylenest_backend.entity.OrderItem;
+import com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService;
 
 import com.stylenest.stylenest_backend.dto.shipment.DtdcBookingRequest;
 import com.stylenest.stylenest_backend.dto.shipment.ShipmentResponse;
@@ -23,6 +29,9 @@ import com.stylenest.stylenest_backend.mapper.ShipmentMapper;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentHistoryRepository;
 import com.stylenest.stylenest_backend.repository.ShipmentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.stylenest.stylenest_backend.service.EmailService;
 import com.stylenest.stylenest_backend.service.ShipmentService;
 import com.stylenest.stylenest_backend.service.courier.CourierTrackingService;
 
@@ -50,11 +59,14 @@ public class ShipmentServiceImpl implements ShipmentService {
             ShipmentStatus.CANCELLED,
             ShipmentStatus.RETURNED);
 
+    private static final Logger log = LoggerFactory.getLogger(ShipmentServiceImpl.class);
+
     private final OrderRepository orderRepository;
     private final ShipmentRepository shipmentRepository;
     private final ShipmentHistoryRepository shipmentHistoryRepository;
     private final ShipmentMapper shipmentMapper;
     private final CourierTrackingService courierTrackingService;
+    private final EmailService emailService;
 
     @Override
     public ShipmentResponse updateShipment(Long orderId, ShipmentUpdateRequest request) {
@@ -66,6 +78,7 @@ public class ShipmentServiceImpl implements ShipmentService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "This order does not have a shipment yet (payment may still be pending)."));
 
+        ShipmentStatus previousStatus = shipment.getShipmentStatus();
         validateTransition(shipment.getShipmentStatus(), request.getShipmentStatus());
 
         shipment.setShipmentStatus(request.getShipmentStatus());
@@ -100,6 +113,10 @@ public class ShipmentServiceImpl implements ShipmentService {
                 .build());
 
         List<ShipmentHistory> history = shipmentHistoryRepository.findByShipmentOrderByTimestampAsc(shipment);
+
+        if (request.getShipmentStatus() != previousStatus || request.getTrackingNumber() != null) {
+            sendShipmentEmailIfPossible(order, shipment);
+        }
 
         return shipmentMapper.toResponse(shipment, history);
     }
@@ -151,6 +168,17 @@ public class ShipmentServiceImpl implements ShipmentService {
                             + order.getShippingCountryCode() + ".");
         }
 
+        BigDecimal weightKg = request != null && request.getWeightKg() != null
+                ? request.getWeightKg() : computeAutoWeightKg(order);
+        BigDecimal lengthCm = request != null && request.getLengthCm() != null
+                ? request.getLengthCm() : BigDecimal.valueOf(30.0);
+        BigDecimal widthCm = request != null && request.getWidthCm() != null
+                ? request.getWidthCm() : BigDecimal.valueOf(25.0);
+        int numPieces = request != null && request.getNumPieces() != null
+                ? request.getNumPieces() : computeTotalPieces(order);
+        BigDecimal heightCm = request != null && request.getHeightCm() != null
+                ? request.getHeightCm() : BigDecimal.valueOf(Math.min(50.0, Math.max(3.0, numPieces * 2.5)));
+
         CourierTrackingService.ShipmentBookingRequest bookingRequest = new CourierTrackingService.ShipmentBookingRequest(
                 order.getOrderNumber(),
                 order.getShippingFullName(),
@@ -163,11 +191,11 @@ public class ShipmentServiceImpl implements ShipmentService {
                 order.getPaymentMethod() == PaymentMethod.COD,
                 order.getPaymentMethod() == PaymentMethod.COD ? order.getTotalAmount() : null,
                 order.getTotalAmount(),
-                request.getWeightKg(),
-                request.getLengthCm(),
-                request.getWidthCm(),
-                request.getHeightCm(),
-                request.getNumPieces() == null ? 1 : request.getNumPieces());
+                weightKg,
+                lengthCm,
+                widthCm,
+                heightCm,
+                numPieces);
 
         CourierTrackingService.BookingResult result = courierTrackingService.bookShipment(bookingRequest);
 
@@ -187,6 +215,8 @@ public class ShipmentServiceImpl implements ShipmentService {
                 .build());
 
         List<ShipmentHistory> history = shipmentHistoryRepository.findByShipmentOrderByTimestampAsc(shipment);
+
+        sendShipmentEmailIfPossible(order, shipment);
 
         return shipmentMapper.toResponse(shipment, history);
     }
@@ -220,6 +250,8 @@ public class ShipmentServiceImpl implements ShipmentService {
 
         List<ShipmentHistory> history = shipmentHistoryRepository.findByShipmentOrderByTimestampAsc(shipment);
 
+        sendShipmentEmailIfPossible(order, shipment);
+
         return shipmentMapper.toResponse(shipment, history);
     }
 
@@ -236,6 +268,7 @@ public class ShipmentServiceImpl implements ShipmentService {
     }
 
     @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ShipmentResponse refreshDtdcTracking(Long orderId) {
 
         Order order = orderRepository.findById(orderId)
@@ -273,6 +306,11 @@ public class ShipmentServiceImpl implements ShipmentService {
 
             if (snapshot.status() == ShipmentStatus.DELIVERED && shipment.getDeliveredAt() == null) {
                 shipment.setDeliveredAt(LocalDateTime.now());
+                if (order.getOrderStatus() != com.stylenest.stylenest_backend.enums.OrderStatus.DELIVERED
+                        && order.getOrderStatus() != com.stylenest.stylenest_backend.enums.OrderStatus.COMPLETED) {
+                    order.setOrderStatus(com.stylenest.stylenest_backend.enums.OrderStatus.DELIVERED);
+                    orderRepository.save(order);
+                }
             }
 
             shipment = shipmentRepository.save(shipment);
@@ -288,9 +326,35 @@ public class ShipmentServiceImpl implements ShipmentService {
 
             history = new ArrayList<>(history);
             history.add(newEntry);
+
+            sendShipmentEmailIfPossible(order, shipment);
         }
 
         return shipmentMapper.toResponse(shipment, history);
+    }
+
+    private void sendShipmentEmailIfPossible(Order order, Shipment shipment) {
+
+        boolean isGuest = order.getUser() == null;
+        String recipient = isGuest ? order.getGuestEmail() : order.getUser().getEmail();
+
+        if (recipient == null || recipient.isBlank()) {
+            return;
+        }
+
+        String customerName = isGuest ? order.getShippingFullName() : order.getUser().getFullName();
+
+        try {
+            emailService.sendShipmentUpdateEmail(
+                    recipient,
+                    customerName,
+                    order.getOrderNumber(),
+                    shipment.getCourierName(),
+                    shipment.getTrackingNumber(),
+                    shipment.getShipmentStatus());
+        } catch (Exception ex) {
+            log.error("Failed to send shipment update email for order {}", order.getOrderNumber(), ex);
+        }
     }
 
     private void requireDtdcBooked(Shipment shipment) {
@@ -320,5 +384,31 @@ public class ShipmentServiceImpl implements ShipmentService {
         if (currentIndex < 0 || nextIndex <= currentIndex) {
             throw new BadRequestException("Shipment status cannot move backward.");
         }
+    }
+
+    private BigDecimal computeAutoWeightKg(Order order) {
+        BigDecimal totalWeightGrams = BigDecimal.ZERO;
+        if (order.getOrderItems() != null) {
+            for (OrderItem item : order.getOrderItems()) {
+                int qty = item.getQuantity() != null ? item.getQuantity() : 1;
+                var spec = DtdcRateCalculatorService.PhysicalItemSpec.fromVariant(item.getProductVariant(), qty);
+                totalWeightGrams = totalWeightGrams.add(spec.computeChargeableWeightGrams());
+            }
+        }
+        if (totalWeightGrams.compareTo(BigDecimal.ZERO) <= 0) {
+            totalWeightGrams = DtdcRateCalculatorService.DEFAULT_ITEM_WEIGHT_GRAMS;
+        }
+        return totalWeightGrams.divide(BigDecimal.valueOf(1000), 2, RoundingMode.HALF_UP)
+                .max(BigDecimal.valueOf(0.35));
+    }
+
+    private int computeTotalPieces(Order order) {
+        int total = 0;
+        if (order.getOrderItems() != null) {
+            for (OrderItem item : order.getOrderItems()) {
+                total += (item.getQuantity() != null ? item.getQuantity() : 1);
+            }
+        }
+        return Math.max(1, total);
     }
 }

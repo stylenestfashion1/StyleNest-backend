@@ -14,4 +14,7 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     Optional<Shipment> findByOrder(Order order);
 
     Optional<Shipment> findByOrder_Id(Long orderId);
+
+    java.util.List<Shipment> findByCourierNameIgnoreCaseAndTrackingNumberIsNotNullAndShipmentStatusNotIn(
+            String courierName, java.util.Collection<com.stylenest.stylenest_backend.enums.ShipmentStatus> statuses);
 }

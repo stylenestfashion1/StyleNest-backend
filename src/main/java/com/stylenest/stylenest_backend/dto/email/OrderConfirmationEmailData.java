@@ -55,4 +55,10 @@ public class OrderConfirmationEmailData {
     private String shippingPostalCode;
 
     private String shippingCountry;
+
+    private String courierName;
+
+    private String estimatedDelivery;
+
+    private String trackingNumber;
 }

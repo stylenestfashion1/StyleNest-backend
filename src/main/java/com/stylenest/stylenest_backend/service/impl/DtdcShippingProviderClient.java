@@ -81,7 +81,7 @@ public class DtdcShippingProviderClient implements CourierTrackingService {
     public DtdcShippingProviderClient(
             @Value("${dtdc.api-key:}") String apiKey,
             @Value("${dtdc.customer-code:}") String customerCode,
-            @Value("${dtdc.service-type-id:B2C PRIORITY}") String serviceTypeId,
+            @Value("${dtdc.service-type-id:B2C GROUND ECONOMY}") String serviceTypeId,
             @Value("${dtdc.commodity-id:Apparel}") String commodityId,
             @Value("${dtdc.tracking-username:}") String trackingUsername,
             @Value("${dtdc.tracking-password:}") String trackingPassword,

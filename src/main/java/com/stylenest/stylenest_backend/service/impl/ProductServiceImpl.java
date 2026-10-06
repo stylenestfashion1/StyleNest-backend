@@ -210,6 +210,16 @@ public class ProductServiceImpl implements ProductService {
 
         productMapper.updateEntity(product, request);
 
+        // Self-heal degenerate placeholder SKUs (e.g. "XXX" produced when a product
+        // was originally created with a bare-number placeholder like "48") upon its
+        // first real update with an actual name. Normal products whose SKU already
+        // has real letters are never touched.
+        if (isDegenerateSku(product.getSku())) {
+            Set<String> existingPrefixes = new HashSet<>(productRepository.findAllSkus());
+            existingPrefixes.remove(product.getSku());
+            product.setSku(SkuGenerator.productPrefix(request.getName(), existingPrefixes));
+        }
+
         assertJeansCodeAvailable(product.getJeansCode(), id);
 
         product.setCategory(category);
@@ -350,6 +360,23 @@ public class ProductServiceImpl implements ProductService {
             throw new DuplicateResourceException(
                     "Jeans code \"" + jeansCode + "\" is already used by another product.");
         }
+    }
+
+    /**
+     * Checks if a SKU is a degenerate fallback where every character is 'X' (e.g. "XXX").
+     * Used exclusively to detect bare-number placeholder SKUs eligible for self-healing
+     * on updateProduct.
+     */
+    private boolean isDegenerateSku(String sku) {
+        if (sku == null || sku.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < sku.length(); i++) {
+            if (Character.toUpperCase(sku.charAt(i)) != 'X') {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override

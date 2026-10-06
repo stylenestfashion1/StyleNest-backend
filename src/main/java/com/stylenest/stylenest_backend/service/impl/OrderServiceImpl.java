@@ -1,6 +1,7 @@
 package com.stylenest.stylenest_backend.service.impl;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -55,12 +56,16 @@ import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 import com.stylenest.stylenest_backend.service.OrderService;
 import com.stylenest.stylenest_backend.service.ProductPricingService;
-
+import java.math.RoundingMode;
+import com.stylenest.stylenest_backend.service.courier.CourierTrackingService;
+import com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     private final UserRepository userRepository;
@@ -76,6 +81,10 @@ public class OrderServiceImpl implements OrderService {
     private final EmailService emailService;
     private final ProductPricingService productPricingService;
     private final com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService dtdcRateCalculatorService;
+    private final CourierTrackingService courierTrackingService;
+
+    @Value("${dtdc.auto-book-enabled:true}")
+    private boolean dtdcAutoBookEnabled;
 
     // Defaults to false so USD is never claimed as payable until the
     // merchant's Cashfree account is actually confirmed activated for
@@ -124,6 +133,17 @@ public class OrderServiceImpl implements OrderService {
 
         User user = getCurrentUser();
 
+        // If the user previously started an online payment attempt that was left pending,
+        // cancel it so stock is returned and duplicate pending orders do not remain.
+        List<Order> inProgressOnline = orderRepository
+                .findByUserAndOrderStatusAndPaymentMethodNot(user, OrderStatus.PENDING, PaymentMethod.COD)
+                .stream()
+                .filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING)
+                .toList();
+        for (Order stale : inProgressOnline) {
+            markOnlinePaymentFailed(stale);
+        }
+
         Cart cart = getNonEmptyCart(user);
 
         Address address = getDefaultAddress(user);
@@ -163,9 +183,15 @@ public class OrderServiceImpl implements OrderService {
 
         for (Order existing : inProgress) {
             if (matchesLines(existing, lines)) {
-                // Same cart, same in-flight order -- re-use it (e.g. the
-                // customer refreshed the payment page or double-clicked Pay)
-                // instead of reserving stock a second time.
+                // If destination postal code is recorded and does not match the current default address,
+                // the customer changed address -- cancel the stale order and create a fresh one.
+                if (existing.getShippingPostalCode() != null) {
+                    Address defaultAddr = addressRepository.findByUserAndIsDefaultTrue(user).orElse(null);
+                    if (defaultAddr != null && !existing.getShippingPostalCode().equals(defaultAddr.getPostalCode())) {
+                        markOnlinePaymentFailed(existing);
+                        break;
+                    }
+                }
                 return existing;
             }
         }
@@ -232,6 +258,17 @@ public class OrderServiceImpl implements OrderService {
 
         validateGuestShippingAddress(request.getShippingAddress());
 
+        // Cancel any lingering in-progress online attempts for this guest email
+        List<Order> inProgressOnline = orderRepository
+                .findByGuestEmailAndOrderStatusAndPaymentMethodNot(
+                        request.getGuestEmail(), OrderStatus.PENDING, PaymentMethod.COD)
+                .stream()
+                .filter(o -> o.getPaymentStatus() == PaymentStatus.PENDING)
+                .toList();
+        for (Order stale : inProgressOnline) {
+            markOnlinePaymentFailed(stale);
+        }
+
         List<ReservationLine> lines = linesFromGuestRequest(request.getItems(), request.getCurrency());
 
         ShippingSnapshot snapshot = ShippingSnapshot.fromGuestRequest(request.getShippingAddress());
@@ -264,6 +301,12 @@ public class OrderServiceImpl implements OrderService {
 
         for (Order existing : inProgress) {
             if (matchesLines(existing, lines)) {
+                if (existing.getShippingPostalCode() != null && request.getShippingAddress() != null
+                        && request.getShippingAddress().getPostalCode() != null
+                        && !existing.getShippingPostalCode().equals(request.getShippingAddress().getPostalCode())) {
+                    markOnlinePaymentFailed(existing);
+                    break;
+                }
                 return existing;
             }
         }
@@ -509,8 +552,26 @@ public class OrderServiceImpl implements OrderService {
 
     private void createInitialShipment(Order order) {
 
+        LocalDate estDate = null;
+        if (order.getShippingPostalCode() != null && !order.getShippingPostalCode().isBlank()) {
+            var zone = dtdcRateCalculatorService.resolveZone(
+                    order.getShippingPostalCode(), order.getShippingCity(), order.getShippingState());
+            if (zone != null) {
+                int businessDays = switch (zone) {
+                    case LOCAL -> 2;
+                    case REGIONAL -> 3;
+                    case METRO -> 5;
+                    case ROI -> 6;
+                    case SPL_DEST -> 7;
+                };
+                estDate = LocalDate.now().plusDays(businessDays);
+            }
+        }
+
         Shipment shipment = Shipment.builder()
                 .order(order)
+                .courierName("DTDC")
+                .estimatedDeliveryDate(estDate)
                 .shipmentStatus(ShipmentStatus.PROCESSING)
                 .build();
 
@@ -519,8 +580,79 @@ public class OrderServiceImpl implements OrderService {
         shipmentHistoryRepository.save(ShipmentHistory.builder()
                 .shipment(shipment)
                 .status(ShipmentStatus.PROCESSING)
-                .description("Order confirmed; preparing shipment.")
+                .description("Order confirmed; preparing shipment via DTDC Ground Economy.")
                 .build());
+
+        if (dtdcAutoBookEnabled) {
+            tryAutoBookDtdc(order, shipment);
+        }
+    }
+
+    private void tryAutoBookDtdc(Order order, Shipment shipment) {
+        if (order.getShippingCountryCode() != null && !order.getShippingCountryCode().equalsIgnoreCase("IN")) {
+            return;
+        }
+
+        BigDecimal totalWeightGrams = BigDecimal.ZERO;
+        int totalPieces = 0;
+        if (order.getOrderItems() != null) {
+            for (OrderItem item : order.getOrderItems()) {
+                int qty = item.getQuantity() != null ? item.getQuantity() : 1;
+                totalPieces += qty;
+                var spec = DtdcRateCalculatorService.PhysicalItemSpec.fromVariant(item.getProductVariant(), qty);
+                totalWeightGrams = totalWeightGrams.add(spec.computeChargeableWeightGrams());
+            }
+        }
+        if (totalWeightGrams.compareTo(BigDecimal.ZERO) <= 0) {
+            totalWeightGrams = DtdcRateCalculatorService.DEFAULT_ITEM_WEIGHT_GRAMS;
+        }
+        totalPieces = Math.max(1, totalPieces);
+
+        BigDecimal weightKg = totalWeightGrams.divide(BigDecimal.valueOf(1000), 2, RoundingMode.HALF_UP)
+                .max(BigDecimal.valueOf(0.35));
+        BigDecimal lengthCm = BigDecimal.valueOf(30.0);
+        BigDecimal widthCm = BigDecimal.valueOf(25.0);
+        BigDecimal heightCm = BigDecimal.valueOf(Math.min(50.0, Math.max(3.0, totalPieces * 2.5)));
+
+        try {
+            CourierTrackingService.ShipmentBookingRequest bookingRequest = new CourierTrackingService.ShipmentBookingRequest(
+                    order.getOrderNumber(),
+                    order.getShippingFullName(),
+                    order.getShippingPhone(),
+                    order.getShippingAddressLine1(),
+                    order.getShippingAddressLine2(),
+                    order.getShippingCity(),
+                    order.getShippingState(),
+                    order.getShippingPostalCode(),
+                    order.getPaymentMethod() == PaymentMethod.COD,
+                    order.getPaymentMethod() == PaymentMethod.COD ? order.getTotalAmount() : null,
+                    order.getTotalAmount(),
+                    weightKg,
+                    lengthCm,
+                    widthCm,
+                    heightCm,
+                    totalPieces);
+
+            CourierTrackingService.BookingResult result = courierTrackingService.bookShipment(bookingRequest);
+
+            if (result != null && result.providerReferenceNumber() != null && !result.providerReferenceNumber().isBlank()) {
+                shipment.setTrackingNumber(result.providerReferenceNumber());
+                shipment.setShipmentStatus(ShipmentStatus.PACKED);
+                shipmentRepository.save(shipment);
+
+                shipmentHistoryRepository.save(ShipmentHistory.builder()
+                        .shipment(shipment)
+                        .status(ShipmentStatus.PACKED)
+                        .description("Automatically booked with DTDC Ground Economy (AWB: " + result.providerReferenceNumber() + ").")
+                        .build());
+
+                log.info("Order {} automatically booked with DTDC Ground Economy. AWB: {}",
+                        order.getOrderNumber(), result.providerReferenceNumber());
+            }
+        } catch (Exception e) {
+            log.warn("Automatic DTDC booking skipped for order {}: {}. Shipment remains in PROCESSING for admin dispatch.",
+                    order.getOrderNumber(), e.getMessage());
+        }
     }
 
     /**
@@ -567,6 +699,19 @@ public class OrderServiceImpl implements OrderService {
                     .map(InvoiceItemResponse::getSubtotal)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+            String estimatedDelivery = null;
+            if (order.getShippingPostalCode() != null && !order.getShippingPostalCode().isBlank()) {
+                var zone = dtdcRateCalculatorService.resolveZone(
+                        order.getShippingPostalCode(), order.getShippingCity(), order.getShippingState());
+                if (zone != null) {
+                    estimatedDelivery = zone.getEstimatedDelivery();
+                }
+            }
+
+            String trackingNum = shipmentRepository.findByOrder(order)
+                    .map(Shipment::getTrackingNumber)
+                    .orElse(null);
+
             OrderConfirmationEmailData data = OrderConfirmationEmailData.builder()
                     .customerName(order.getShippingFullName())
                     .orderNumber(order.getOrderNumber())
@@ -578,6 +723,9 @@ public class OrderServiceImpl implements OrderService {
                     .paymentMethod(order.getPaymentMethod())
                     .paymentStatus(order.getPaymentStatus())
                     .orderStatus(order.getOrderStatus())
+                    .courierName("DTDC Ground Economy")
+                    .estimatedDelivery(estimatedDelivery)
+                    .trackingNumber(trackingNum)
                     .shippingAddressLine1(order.getShippingAddressLine1())
                     .shippingAddressLine2(order.getShippingAddressLine2())
                     .shippingCity(order.getShippingCity())
@@ -663,6 +811,31 @@ public class OrderServiceImpl implements OrderService {
         }
 
         orderRepository.save(order);
+
+        // Cancel DTDC shipment if already booked
+        shipmentRepository.findByOrder(order).ifPresent(shipment -> {
+            if ("DTDC".equalsIgnoreCase(shipment.getCourierName())
+                    && shipment.getTrackingNumber() != null
+                    && !shipment.getTrackingNumber().isBlank()
+                    && shipment.getShipmentStatus() != ShipmentStatus.CANCELLED
+                    && shipment.getShipmentStatus() != ShipmentStatus.DELIVERED) {
+                try {
+                    courierTrackingService.cancelShipment(shipment.getTrackingNumber());
+                    shipment.setShipmentStatus(ShipmentStatus.CANCELLED);
+                    shipmentRepository.save(shipment);
+                    shipmentHistoryRepository.save(ShipmentHistory.builder()
+                            .shipment(shipment)
+                            .status(ShipmentStatus.CANCELLED)
+                            .description("Consignment automatically cancelled with DTDC.")
+                            .build());
+                    log.info("DTDC consignment {} automatically cancelled for order {}.",
+                            shipment.getTrackingNumber(), order.getOrderNumber());
+                } catch (Exception ex) {
+                    log.warn("Failed to auto-cancel DTDC consignment {} for order {}: {}",
+                            shipment.getTrackingNumber(), order.getOrderNumber(), ex.getMessage());
+                }
+            }
+        });
     }
 
     @Override

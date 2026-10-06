@@ -17,6 +17,7 @@ import com.stylenest.stylenest_backend.dto.invoice.InvoiceItemResponse;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
+import com.stylenest.stylenest_backend.enums.ShipmentStatus;
 import com.stylenest.stylenest_backend.exception.EmailSendFailedException;
 import com.stylenest.stylenest_backend.service.EmailService;
 
@@ -101,6 +102,19 @@ public class EmailServiceImpl implements EmailService {
                 null, null, "order status update", orderNumber);
     }
 
+    @Override
+    public void sendShipmentUpdateEmail(
+            String toEmail, String customerName, String orderNumber,
+            String courierName, String trackingNumber, ShipmentStatus shipmentStatus) {
+
+        String statusLabel = shipmentStatusLabel(shipmentStatus);
+        String subject = "StyleNest Fashion - Order #" + orderNumber + " " + statusLabel;
+
+        send(toEmail, subject,
+                buildShipmentUpdateTemplate(customerName, orderNumber, courierName, trackingNumber, shipmentStatus),
+                null, null, "shipment update", orderNumber);
+    }
+
     /**
      * Shared send path for every email type. Attaches a PDF only when
      * attachmentBytes is non-null. Logs the technical failure server-side
@@ -155,6 +169,22 @@ public class EmailServiceImpl implements EmailService {
             case PACKED -> "Packed";
             case SHIPPED -> "Shipped";
             case DELIVERED -> "Delivered";
+        };
+    }
+
+    private String shipmentStatusLabel(ShipmentStatus status) {
+        if (status == null) {
+            return "Shipment Update";
+        }
+        return switch (status) {
+            case PROCESSING -> "Processing";
+            case PACKED -> "Packed & Ready for Dispatch";
+            case SHIPPED -> "Dispatched";
+            case IN_TRANSIT -> "In Transit";
+            case OUT_FOR_DELIVERY -> "Out for Delivery";
+            case DELIVERED -> "Delivered";
+            case CANCELLED -> "Shipment Cancelled";
+            case RETURNED -> "Shipment Returned";
         };
     }
 
@@ -227,6 +257,66 @@ public class EmailServiceImpl implements EmailService {
         return emailShell(body);
     }
 
+    private String buildShipmentUpdateTemplate(
+            String customerName, String orderNumber, String courierName,
+            String trackingNumber, ShipmentStatus shipmentStatus) {
+
+        String courierRow = (courierName != null && !courierName.isBlank())
+                ? """
+                  <tr><td style="padding:8px 0;color:#9a9488;">Courier Partner</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;">%s</td></tr>
+                  """.formatted(courierName)
+                : "";
+
+        String trackingRow = (trackingNumber != null && !trackingNumber.isBlank())
+                ? """
+                  <tr><td style="padding:8px 0;color:#9a9488;">Tracking / AWB Number</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;letter-spacing:1px;">%s</td></tr>
+                  """.formatted(trackingNumber)
+                : "";
+
+        String trackingButton;
+        if (trackingNumber != null && !trackingNumber.isBlank()) {
+            String trackingUrl = "DTDC".equalsIgnoreCase(courierName)
+                    ? "https://track.dtdc.com/ct/tracking-search?trkType=cnno&strcnno=" + trackingNumber
+                    : "https://stylenestfashion.com/track-order?orderNumber=" + orderNumber;
+
+            trackingButton = """
+                    <div style="text-align:center;margin:30px 0 18px 0;">
+                      <a href="%s" target="_blank" style="background:#1a1a1a;color:#ffffff;text-decoration:none;padding:12px 28px;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-family:Arial,sans-serif;display:inline-block;border-radius:2px;font-weight:bold;">Track Your Shipment</a>
+                    </div>
+                    <p style="font-size:12px;color:#9a9488;text-align:center;margin:0 0 16px 0;">
+                      You can also track on <a href="https://www.dtdc.in/" target="_blank" style="color:#a08b6f;text-decoration:underline;">dtdc.in</a> or StyleNest using your AWB number.
+                    </p>
+                    """.formatted(trackingUrl);
+        } else {
+            trackingButton = """
+                    <div style="text-align:center;margin:30px 0 18px 0;">
+                      <a href="https://stylenestfashion.com/track-order?orderNumber=%s" target="_blank" style="background:#1a1a1a;color:#ffffff;text-decoration:none;padding:12px 28px;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-family:Arial,sans-serif;display:inline-block;border-radius:2px;font-weight:bold;">View Order Details</a>
+                    </div>
+                    """.formatted(orderNumber);
+        }
+
+        String body = """
+                <h2 style="font-family:Georgia,serif;font-weight:normal;font-size:20px;color:#1a1a1a;margin:0 0 16px 0;">Shipment Update</h2>
+                <p style="font-size:14px;line-height:1.6;color:#4a4a4a;margin:0 0 20px 0;">Hi %s, your order shipment status has been updated.</p>
+                <table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:12px;">
+                  <tr><td style="padding:8px 0;color:#9a9488;">Order Number</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;">#%s</td></tr>
+                  <tr><td style="padding:8px 0;color:#9a9488;">Current Status</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;">%s</td></tr>
+                  %s
+                  %s
+                </table>
+                %s
+                """.formatted(
+                customerName,
+                orderNumber,
+                shipmentStatusLabel(shipmentStatus),
+                courierRow,
+                trackingRow,
+                trackingButton
+        );
+
+        return emailShell(body);
+    }
+
     private String buildOrderConfirmationTemplate(OrderConfirmationEmailData data) {
 
         String paymentMethodLabel = data.getPaymentMethod() == PaymentMethod.COD
@@ -263,6 +353,14 @@ public class EmailServiceImpl implements EmailService {
                 <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Subtotal</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
                 """.formatted(currency(data.getSubtotal()));
 
+        String deliveryRow = data.getEstimatedDelivery() == null ? "" : """
+                <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Estimated Delivery</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;font-weight:bold;">%s (%s)</td></tr>
+                """.formatted(data.getEstimatedDelivery(), data.getCourierName() != null ? data.getCourierName() : "DTDC Ground Economy");
+
+        String trackingRow = data.getTrackingNumber() == null || data.getTrackingNumber().isBlank() ? "" : """
+                <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Tracking Number</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;font-weight:bold;">%s (DTDC)</td></tr>
+                """.formatted(data.getTrackingNumber());
+
         String body = """
                 <h2 style="font-family:Georgia,serif;font-weight:normal;font-size:20px;color:#1a1a1a;margin:0 0 4px 0;">Order Confirmed</h2>
                 <p style="font-size:13px;color:#9a9488;margin:0 0 24px 0;">Order #%s &middot; %s</p>
@@ -285,6 +383,8 @@ public class EmailServiceImpl implements EmailService {
                   <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Payment Method</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
                   <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Payment Status</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
                   <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Order Status</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;">%s</td></tr>
+                  %s
+                  %s
                 </table>
 
                 <div style="border-top:1px solid #ece7dd;padding-top:20px;">
@@ -306,6 +406,8 @@ public class EmailServiceImpl implements EmailService {
                 paymentMethodLabel,
                 paymentStatusLabel,
                 data.getOrderStatus() == null ? "" : orderStatusLabel(data.getOrderStatus()),
+                deliveryRow,
+                trackingRow,
                 data.getShippingAddressLine1(),
                 addressLine2,
                 data.getShippingCity(),

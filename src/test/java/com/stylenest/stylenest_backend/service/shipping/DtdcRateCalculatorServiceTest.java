@@ -21,7 +21,7 @@ class DtdcRateCalculatorServiceTest {
     }
 
     @Test
-    @DisplayName("Local Indore (< 500g): Base 36.00 + 18% GST = 42.48")
+    @DisplayName("Local Indore (< 500g): Base 36.00 + 18% GST = 42.48 -> Rounded UP to 43.00")
     void testLocalIndoreUnder500g() {
         var items = List.of(DtdcRateCalculatorService.PhysicalItemSpec.defaultApparel(1)); // 350g
         ShippingCalculationResponse res = calculator.calculateShipping("452010", "Indore", "Madhya Pradesh", items);
@@ -29,11 +29,11 @@ class DtdcRateCalculatorServiceTest {
         assertThat(res.getZone()).isEqualTo("LOCAL");
         assertThat(res.getBaseCharge()).isEqualByComparingTo("36.00");
         assertThat(res.getGstAmount()).isEqualByComparingTo("6.48");
-        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("42.48");
+        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("43.00");
     }
 
     @Test
-    @DisplayName("Metro Bangalore (< 500g): Base 54.00 + 18% GST = 63.72")
+    @DisplayName("Metro Bangalore (< 500g): Base 54.00 + 18% GST = 63.72 -> Rounded UP to 64.00")
     void testMetroBangaloreSingleItem() {
         var items = List.of(DtdcRateCalculatorService.PhysicalItemSpec.defaultApparel(1)); // 350g
         ShippingCalculationResponse res = calculator.calculateShipping("560001", "Bengaluru", "Karnataka", items);
@@ -41,11 +41,11 @@ class DtdcRateCalculatorServiceTest {
         assertThat(res.getZone()).isEqualTo("METRO");
         assertThat(res.getBaseCharge()).isEqualByComparingTo("54.00");
         assertThat(res.getGstAmount()).isEqualByComparingTo("9.72");
-        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("63.72");
+        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("64.00");
     }
 
     @Test
-    @DisplayName("Metro Bangalore (4 items = 1400g): Base 54 + (2 * 39) = 132.00 + 18% GST = 155.76")
+    @DisplayName("Metro Bangalore (4 items = 1400g): Base 54 + (2 * 39) = 132.00 + 18% GST = 155.76 -> Rounded UP to 156.00")
     void testMetroBangaloreFourItems() {
         var items = List.of(DtdcRateCalculatorService.PhysicalItemSpec.defaultApparel(4)); // 4 * 350g = 1400g
         ShippingCalculationResponse res = calculator.calculateShipping("560001", "Bengaluru", "Karnataka", items);
@@ -54,11 +54,11 @@ class DtdcRateCalculatorServiceTest {
         assertThat(res.getChargeableWeightGrams()).isEqualByComparingTo("1400");
         assertThat(res.getBaseCharge()).isEqualByComparingTo("132.00");
         assertThat(res.getGstAmount()).isEqualByComparingTo("23.76");
-        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("155.76");
+        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("156.00");
     }
 
     @Test
-    @DisplayName("Regional MP (Bhopal < 500g): Base 39.00 + 18% GST = 46.02")
+    @DisplayName("Regional MP (Bhopal < 500g): Base 39.00 + 18% GST = 46.02 -> Rounded UP to 47.00")
     void testRegionalMpSingleItem() {
         var items = List.of(DtdcRateCalculatorService.PhysicalItemSpec.defaultApparel(1));
         ShippingCalculationResponse res = calculator.calculateShipping("462001", "Bhopal", "Madhya Pradesh", items);
@@ -66,11 +66,11 @@ class DtdcRateCalculatorServiceTest {
         assertThat(res.getZone()).isEqualTo("REGIONAL");
         assertThat(res.getBaseCharge()).isEqualByComparingTo("39.00");
         assertThat(res.getGstAmount()).isEqualByComparingTo("7.02");
-        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("46.02");
+        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("47.00");
     }
 
     @Test
-    @DisplayName("Volumetric weight used when higher than actual weight")
+    @DisplayName("Volumetric weight used when higher than actual weight -> Rounded UP to 102.00")
     void testVolumetricWeightOverride() {
         // Actual 300g, but box is 30 x 20 x 10 = 6000 cm3 / 4750 = 1.263 kg = 1263g
         var item = new DtdcRateCalculatorService.PhysicalItemSpec(
@@ -84,8 +84,8 @@ class DtdcRateCalculatorServiceTest {
 
         assertThat(res.getChargeableWeightGrams()).isEqualByComparingTo("1263");
         // 1263g -> base 500g + 2 additional slabs of 500g (up to 1500g)
-        // Local: 36 + (2 * 25) = 86.00 + 18% GST (15.48) = 101.48
+        // Local: 36 + (2 * 25) = 86.00 + 18% GST (15.48) = 101.48 -> ceil = 102.00
         assertThat(res.getBaseCharge()).isEqualByComparingTo("86.00");
-        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("101.48");
+        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("102.00");
     }
 }

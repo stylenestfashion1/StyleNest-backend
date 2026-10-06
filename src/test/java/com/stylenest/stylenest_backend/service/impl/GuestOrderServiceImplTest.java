@@ -42,6 +42,12 @@ class GuestOrderServiceImplTest {
     @Mock
     private InvoiceGenerationService invoiceGenerationService;
 
+    @Mock
+    private com.stylenest.stylenest_backend.service.ShipmentService shipmentService;
+
+    @Mock
+    private com.stylenest.stylenest_backend.repository.ShipmentRepository shipmentRepository;
+
     private GuestOrderServiceImpl guestOrderService;
 
     private Order guestOrder;
@@ -49,7 +55,9 @@ class GuestOrderServiceImplTest {
     @BeforeEach
     void setUp() {
 
-        guestOrderService = new GuestOrderServiceImpl(orderService, orderRepository, orderMapper, invoiceService, invoiceGenerationService);
+        guestOrderService = new GuestOrderServiceImpl(
+                orderService, orderRepository, orderMapper, invoiceService, invoiceGenerationService,
+                shipmentService, shipmentRepository);
 
         guestOrder = Order.builder()
                 .id(1L)

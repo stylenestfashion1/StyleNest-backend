@@ -669,4 +669,67 @@ class ProductServiceImplTest {
         // check against other products should even run.
         verify(productRepository, never()).existsBySlug(org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    void updateProduct_regeneratesSkuWhenCurrentSkuIsDegenerateAllX() {
+
+        newService();
+
+        Product existing = product(180L, "48");
+        existing.setSku("XXX"); // degenerate fallback from bare number placeholder
+        Category category = existing.getCategory();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Awesome Graphic T-Shirt")
+                .price(BigDecimal.valueOf(999))
+                .categoryId(category.getId())
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.findById(180L)).thenReturn(java.util.Optional.of(existing));
+        when(categoryRepository.findById(category.getId())).thenReturn(java.util.Optional.of(category));
+        when(productRepository.findAllSkus()).thenReturn(List.of("XXX", "SEL", "UGT"));
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.updateProduct(180L, request);
+
+        // "Awesome Graphic T-Shirt" -> AGT
+        assertThat(response.getSku()).isEqualTo("AGT");
+        assertThat(existing.getSku()).isEqualTo("AGT");
+        verify(productRepository).findAllSkus();
+    }
+
+    @Test
+    void updateProduct_doesNotTouchSkuWhenAlreadyHasRealValue() {
+
+        newService();
+
+        Product existing = product(25L, "Pink Cotton Kurti");
+        existing.setSku("PCK"); // real established SKU
+        Category category = existing.getCategory();
+
+        ProductRequest request = ProductRequest.builder()
+                .name("Pink Cotton Embroidered Kurti") // renamed
+                .price(BigDecimal.valueOf(999))
+                .categoryId(category.getId())
+                .featured(false)
+                .trending(false)
+                .active(true)
+                .build();
+
+        when(productRepository.findById(25L)).thenReturn(java.util.Optional.of(existing));
+        when(categoryRepository.findById(category.getId())).thenReturn(java.util.Optional.of(category));
+        when(productRepository.save(org.mockito.ArgumentMatchers.any(Product.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        ProductResponse response = productService.updateProduct(25L, request);
+
+        // Real SKU must stay completely untouched by name change
+        assertThat(response.getSku()).isEqualTo("PCK");
+        assertThat(existing.getSku()).isEqualTo("PCK");
+        verify(productRepository, never()).findAllSkus();
+    }
 }

@@ -44,6 +44,13 @@ class SkuGeneratorTest {
     }
 
     @Test
+    void productPrefix_digitsOnlyName_producesDegenerateXFallback() {
+        // A placeholder name without any letters (e.g. "48") has no significant words
+        // and falls back to "XXX" via initials().
+        assertThat(SkuGenerator.productPrefix("48", Set.of())).isEqualTo("XXX");
+    }
+
+    @Test
     void colorCode_takesFirstThreeLettersForSingleWordColor() {
         assertThat(SkuGenerator.colorCode("BLACK", Set.of())).isEqualTo("BLA");
         assertThat(SkuGenerator.colorCode("BLUE", Set.of())).isEqualTo("BLU");

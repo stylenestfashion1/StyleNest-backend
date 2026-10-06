@@ -103,6 +103,28 @@ class EmailServiceImplTest {
         assertThat(sent.getContent()).isInstanceOf(String.class);
     }
 
+    @Test
+    void sendShipmentUpdateEmail_containsCourierAndAwbAndTrackingLink() throws Exception {
+
+        emailService.sendShipmentUpdateEmail(
+                "customer@example.com", "Jane Doe", "SN-5001",
+                "DTDC", "7D142279743", com.stylenest.stylenest_backend.enums.ShipmentStatus.SHIPPED);
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender).send(captor.capture());
+        MimeMessage sent = captor.getValue();
+
+        assertThat(sent.getSubject()).contains("SN-5001");
+        assertThat(sent.getSubject()).contains("Dispatched");
+        assertThat(sent.getAllRecipients()[0].toString()).isEqualTo("customer@example.com");
+
+        String html = extractHtmlPart(sent);
+        assertThat(html).contains("DTDC");
+        assertThat(html).contains("7D142279743");
+        assertThat(html).contains("Track Your Shipment");
+        assertThat(html).contains("track.dtdc.com");
+    }
+
     private String extractHtmlPart(MimeMessage message) throws Exception {
 
         String found = findHtmlPart(message.getContent());
