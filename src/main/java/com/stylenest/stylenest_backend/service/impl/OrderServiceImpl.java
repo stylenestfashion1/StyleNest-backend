@@ -126,8 +126,7 @@ public class OrderServiceImpl implements OrderService {
         if (request.getPaymentMethod() != PaymentMethod.COD) {
 
             throw new BadRequestException(
-                    "Online payments must be started via "
-                            + "POST /api/payments/initiate. "
+                    "Online payments must be initiated through the payment gateway. "
                             + "This endpoint only accepts COD.");
         }
 
@@ -196,10 +195,10 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        if (!inProgress.isEmpty()) {
-            throw new PendingPaymentExistsException(
-                    "You already have a payment in progress for a different cart. "
-                            + "Cancel it first via PUT /api/orders/{id}/cancel, then try again.");
+        // If the customer modified cart items/quantities or abandoned a previous attempt,
+        // auto-cancel any stale in-progress orders so stock reservations are returned cleanly.
+        for (Order stale : inProgress) {
+            markOnlinePaymentFailed(stale);
         }
 
         Address address = getDefaultAddress(user);
@@ -251,8 +250,7 @@ public class OrderServiceImpl implements OrderService {
         if (request.getPaymentMethod() != PaymentMethod.COD) {
 
             throw new BadRequestException(
-                    "Online payments must be started via "
-                            + "POST /api/payments/guest/initiate. "
+                    "Online payments must be initiated through the payment gateway. "
                             + "This endpoint only accepts COD.");
         }
 
@@ -311,10 +309,10 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        if (!inProgress.isEmpty()) {
-            throw new PendingPaymentExistsException(
-                    "You already have a payment in progress for a different order. "
-                            + "Complete that payment first, then try again.");
+        // If guest cart items/quantities changed or a previous attempt was left pending,
+        // auto-cancel any stale in-progress orders so stock reservations are returned cleanly.
+        for (Order stale : inProgress) {
+            markOnlinePaymentFailed(stale);
         }
 
         ShippingSnapshot snapshot = ShippingSnapshot.fromGuestRequest(request.getShippingAddress());

@@ -287,9 +287,7 @@ public class ProductServiceImpl implements ProductService {
         // history). Admins should deactivate it instead.
         if (orderItemRepository.existsByProductVariant_Product_Id(id)) {
             throw new ProductHasOrderHistoryException(
-                    "Cannot delete a product with existing orders. "
-                            + "Deactivate it instead via PUT /api/admin/products/"
-                            + id + " with active:false.");
+                    "Cannot delete a product with existing orders. Please deactivate it instead.");
         }
 
         // Cart and wishlist entries are ephemeral/mutable, not historical

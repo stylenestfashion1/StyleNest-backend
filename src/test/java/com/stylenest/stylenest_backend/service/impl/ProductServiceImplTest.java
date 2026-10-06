@@ -275,7 +275,7 @@ class ProductServiceImplTest {
 
         assertThatThrownBy(() -> productService.deleteProduct(6L))
                 .isInstanceOf(ProductHasOrderHistoryException.class)
-                .hasMessageContaining("active:false");
+                .hasMessageContaining("deactivate");
 
         verify(cartItemRepository, never()).deleteByProductVariant_Product_Id(org.mockito.ArgumentMatchers.anyLong());
         verify(wishlistItemRepository, never()).deleteByProductId(org.mockito.ArgumentMatchers.anyLong());

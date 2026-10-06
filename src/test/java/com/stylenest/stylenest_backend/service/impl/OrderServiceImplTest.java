@@ -192,7 +192,7 @@ class OrderServiceImplTest {
 
         assertThatThrownBy(() -> orderService.placeOrder(request))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("/api/payments/initiate");
+                .hasMessageContaining("payment gateway");
     }
 
     @Test
@@ -379,9 +379,13 @@ class OrderServiceImplTest {
 
         when(orderRepository.findByUserAndOrderStatusAndPaymentMethodNot(user, OrderStatus.PENDING, PaymentMethod.COD))
                 .thenReturn(List.of(existing));
+        when(addressRepository.findByUserAndIsDefaultTrue(user)).thenReturn(Optional.of(address));
+        when(productVariantRepository.findById(1L)).thenReturn(Optional.of(variant));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE))
-                .isInstanceOf(PendingPaymentExistsException.class);
+        Order fresh = orderService.reserveOrderForOnlinePayment(PaymentMethod.ONLINE);
+        assertThat(fresh).isNotNull();
+        assertThat(existing.getOrderStatus()).isEqualTo(OrderStatus.CANCELLED);
     }
 
     @Test
@@ -549,7 +553,7 @@ class OrderServiceImplTest {
 
         assertThatThrownBy(() -> orderService.placeGuestOrder(guestRequest(PaymentMethod.ONLINE)))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("/api/payments/guest/initiate");
+                .hasMessageContaining("payment gateway");
     }
 
     @Test
