@@ -45,16 +45,16 @@ class DtdcRateCalculatorServiceTest {
     }
 
     @Test
-    @DisplayName("Metro Bangalore (4 items = 1400g): Base 54 + (2 * 39) = 132.00 + 18% GST = 155.76 -> Rounded UP to 156.00")
+    @DisplayName("Metro Bangalore (4 items = 2000g): Base 54 + (3 * 39) = 171.00 + 18% GST = 201.78 -> Rounded UP to 202.00")
     void testMetroBangaloreFourItems() {
-        var items = List.of(DtdcRateCalculatorService.PhysicalItemSpec.defaultApparel(4)); // 4 * 350g = 1400g
+        var items = List.of(DtdcRateCalculatorService.PhysicalItemSpec.defaultApparel(4)); // 4 * 500g = 2000g
         ShippingCalculationResponse res = calculator.calculateShipping("560001", "Bengaluru", "Karnataka", items);
 
         assertThat(res.getZone()).isEqualTo("METRO");
-        assertThat(res.getChargeableWeightGrams()).isEqualByComparingTo("1400");
-        assertThat(res.getBaseCharge()).isEqualByComparingTo("132.00");
-        assertThat(res.getGstAmount()).isEqualByComparingTo("23.76");
-        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("156.00");
+        assertThat(res.getChargeableWeightGrams()).isEqualByComparingTo("2000");
+        assertThat(res.getBaseCharge()).isEqualByComparingTo("171.00");
+        assertThat(res.getGstAmount()).isEqualByComparingTo("30.78");
+        assertThat(res.getTotalShippingFee()).isEqualByComparingTo("202.00");
     }
 
     @Test

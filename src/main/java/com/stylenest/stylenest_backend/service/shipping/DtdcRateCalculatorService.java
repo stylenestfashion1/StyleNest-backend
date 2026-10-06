@@ -18,13 +18,13 @@ import com.stylenest.stylenest_backend.entity.ProductVariant;
  * Service: Product 7D (Ground Express / Surface - standard for retail apparel).
  * Volumetric Factor: (L x W x H in cm) / 4750 (Surface B2C Ground).
  * Chargeable Weight: Higher of actual weight or volumetric weight.
- * Default baseline fallback weight: 350 grams per apparel piece.
+ * Default baseline fallback weight: 500 grams per apparel piece.
  * All rates exclude GST (18% GST charged additionally).
  */
 @Service
 public class DtdcRateCalculatorService {
 
-    public static final BigDecimal DEFAULT_ITEM_WEIGHT_GRAMS = BigDecimal.valueOf(350);
+    public static final BigDecimal DEFAULT_ITEM_WEIGHT_GRAMS = BigDecimal.valueOf(500);
     private static final BigDecimal VOLUMETRIC_DIVISOR = BigDecimal.valueOf(4750);
     private static final BigDecimal GST_RATE = BigDecimal.valueOf(0.18);
     private static final BigDecimal WEIGHT_SLAB_GRAMS = BigDecimal.valueOf(500);

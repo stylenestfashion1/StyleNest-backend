@@ -609,7 +609,7 @@ public class OrderServiceImpl implements OrderService {
         totalPieces = Math.max(1, totalPieces);
 
         BigDecimal weightKg = totalWeightGrams.divide(BigDecimal.valueOf(1000), 2, RoundingMode.HALF_UP)
-                .max(BigDecimal.valueOf(0.35));
+                .max(BigDecimal.valueOf(0.50));
         BigDecimal lengthCm = BigDecimal.valueOf(30.0);
         BigDecimal widthCm = BigDecimal.valueOf(25.0);
         BigDecimal heightCm = BigDecimal.valueOf(Math.min(50.0, Math.max(3.0, totalPieces * 2.5)));

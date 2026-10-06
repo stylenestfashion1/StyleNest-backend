@@ -399,7 +399,7 @@ public class ShipmentServiceImpl implements ShipmentService {
             totalWeightGrams = DtdcRateCalculatorService.DEFAULT_ITEM_WEIGHT_GRAMS;
         }
         return totalWeightGrams.divide(BigDecimal.valueOf(1000), 2, RoundingMode.HALF_UP)
-                .max(BigDecimal.valueOf(0.35));
+                .max(BigDecimal.valueOf(0.50));
     }
 
     private int computeTotalPieces(Order order) {
