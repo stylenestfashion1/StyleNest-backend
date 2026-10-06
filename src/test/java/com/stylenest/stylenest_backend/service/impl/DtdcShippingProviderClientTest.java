@@ -23,7 +23,7 @@ import com.stylenest.stylenest_backend.service.courier.CourierTrackingService.Sh
 class DtdcShippingProviderClientTest {
 
     private final DtdcShippingProviderClient client = new DtdcShippingProviderClient(
-            "", "", "B2C SMART EXPRESS", "Apparel", "", "", "production",
+            "", "", "B2C GROUND ECONOMY", "Apparel", "", "", "production",
             "StyleNest Fashion", "6269933231", "Madhya Pradesh",
             "175-B, Amrit Palace, Nipania", "Indore", "452010");
 
