@@ -10,6 +10,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.stylenest.stylenest_backend.service.MetaCapiService;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,6 +84,9 @@ public class OrderServiceImpl implements OrderService {
     private final ProductPricingService productPricingService;
     private final com.stylenest.stylenest_backend.service.shipping.DtdcRateCalculatorService dtdcRateCalculatorService;
     private final CourierTrackingService courierTrackingService;
+
+    @Autowired(required = false)
+    private MetaCapiService metaCapiService;
 
     @Value("${dtdc.auto-book-enabled:true}")
     private boolean dtdcAutoBookEnabled;
@@ -666,6 +671,14 @@ public class OrderServiceImpl implements OrderService {
      * could be sent.
      */
     private void sendConfirmationEmailIfNeeded(Order order) {
+
+        if (metaCapiService != null) {
+            try {
+                metaCapiService.sendPurchaseEvent(order);
+            } catch (Exception ex) {
+                log.warn("Meta CAPI dispatch error for order #{}: {}", order.getOrderNumber(), ex.getMessage());
+            }
+        }
 
         if (Boolean.TRUE.equals(order.getConfirmationEmailSent())) {
             return;
