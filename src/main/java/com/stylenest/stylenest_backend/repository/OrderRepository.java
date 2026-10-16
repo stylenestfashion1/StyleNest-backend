@@ -15,9 +15,12 @@ import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.User;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
+import com.stylenest.stylenest_backend.enums.PaymentStatus;
+import java.time.LocalDateTime;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long>, JpaSpecificationExecutor<Order> {
+    List<Order> findByOrderStatusAndPaymentStatusAndCreatedAtBefore(OrderStatus orderStatus, PaymentStatus paymentStatus, LocalDateTime cutoff);
 	List<Order> findTop10ByOrderByCreatedAtDesc();
     List<Order> findByUser(User user);
     List<Order> findAllByOrderByCreatedAtDesc();
