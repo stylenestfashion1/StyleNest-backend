@@ -67,7 +67,7 @@ public class BulkOrderServiceImpl implements BulkOrderService {
                     "Only Online payment (PayGlocal) or Cash on Delivery is supported for bulk orders.");
         }
 
-        enforceOneCustomerPerToken(token, request);
+        recordTokenUsage(token, request);
 
         BulkOrder order = BulkOrder.builder()
                 .bulkOrderNumber(generateBulkOrderNumber())
@@ -173,31 +173,21 @@ public class BulkOrderServiceImpl implements BulkOrderService {
     }
 
     /**
-     * Enforces "one customer per token": the first order placed with a
-     * token binds it to that customer's normalized email+phone; every
-     * later order attempt with the same token must match both, or it's
-     * rejected with the same generic message a completely invalid token
-     * would get (never reveals *why* it failed).
+     * Records wholesale access code usage without restricting it to a single customer email/phone.
+     * Keeps tracking information (name, email, phone, timestamps) updated for admin auditing.
      */
-    private void enforceOneCustomerPerToken(BulkAccessToken token, BulkOrderRequest request) {
+    private void recordTokenUsage(BulkAccessToken token, BulkOrderRequest request) {
 
         String normalizedEmail = normalizeEmail(request.getCustomerEmail());
         String normalizedPhone = normalizePhone(request.getCustomerPhone());
 
-        if (token.getAssignedCustomerEmail() == null) {
-
-            token.setAssignedCustomerName(request.getCustomerName().trim());
-            token.setAssignedCustomerEmail(normalizedEmail);
-            token.setAssignedCustomerPhone(normalizedPhone);
+        if (token.getFirstUsedAt() == null) {
             token.setFirstUsedAt(LocalDateTime.now());
-
-        } else if (!token.getAssignedCustomerEmail().equalsIgnoreCase(normalizedEmail)
-                || !token.getAssignedCustomerPhone().equals(normalizedPhone)) {
-
-            throw new BulkTokenAlreadyAssignedException(
-                    "This access code is already assigned. Please contact the shop.");
         }
 
+        token.setAssignedCustomerName(request.getCustomerName().trim());
+        token.setAssignedCustomerEmail(normalizedEmail);
+        token.setAssignedCustomerPhone(normalizedPhone);
         token.setLastUsedAt(LocalDateTime.now());
 
         bulkAccessTokenRepository.save(token);
