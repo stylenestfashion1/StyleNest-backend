@@ -37,6 +37,7 @@ public class PayGlocalServiceImpl implements PayGlocalService {
     private final PayGlocalProperties properties;
     private final PayGlocalCryptoService cryptoService;
     private final BulkOrderRepository bulkOrderRepository;
+    private final com.stylenest.stylenest_backend.repository.BulkProductRepository bulkProductRepository;
     private final ObjectMapper objectMapper;
     private final InvoiceGenerationService invoiceGenerationService;
     private final InvoiceService invoiceService;
@@ -201,9 +202,23 @@ public class PayGlocalServiceImpl implements PayGlocalService {
                     + order.getBulkOrderNumber() + "&status=success";
         } else {
             order.setOrderStatus(OrderStatus.CANCELLED);
+            order.setPaymentStatus(PaymentStatus.FAILED);
+            restoreStockIfCancelled(order);
             bulkOrderRepository.save(order);
             return "https://stylenestfashion.com/bulk-orders/order-confirmation?orderNumber="
                     + order.getBulkOrderNumber() + "&status=failed";
+        }
+    }
+
+    private void restoreStockIfCancelled(BulkOrder order) {
+        if (order.getItems() != null) {
+            for (var item : order.getItems()) {
+                if (item.getBulkProduct() != null && item.getBulkProduct().getAvailableStock() != null) {
+                    var prod = item.getBulkProduct();
+                    prod.setAvailableStock(prod.getAvailableStock() + item.getQuantity());
+                    bulkProductRepository.save(prod);
+                }
+            }
         }
     }
 
