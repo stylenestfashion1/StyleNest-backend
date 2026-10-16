@@ -26,6 +26,7 @@ import com.stylenest.stylenest_backend.repository.ProductImageRepository;
 import com.stylenest.stylenest_backend.repository.ProductRepository;
 import com.stylenest.stylenest_backend.repository.ProductVariantRepository;
 import com.stylenest.stylenest_backend.service.ProductVariantService;
+import com.stylenest.stylenest_backend.util.CategoryShippingDefaults;
 import com.stylenest.stylenest_backend.util.ColorNormalizer;
 import com.stylenest.stylenest_backend.util.SkuGenerator;
 
@@ -68,6 +69,7 @@ public class ProductVariantServiceImpl implements ProductVariantService {
         ProductVariant variant = variantMapper.toEntity(request);
         variant.setProduct(product);
         variant.setSku(generateVariantSku(product, variant.getColor(), variant.getSize()));
+        applyVariantShippingDefaults(variant, product);
 
         ProductVariant savedVariant = variantRepository.save(variant);
 
@@ -128,6 +130,7 @@ public class ProductVariantServiceImpl implements ProductVariantService {
         }
 
         variantMapper.updateEntity(variant, request);
+        applyVariantShippingDefaults(variant, variant.getProduct());
 
         ProductVariant updatedVariant = variantRepository.save(variant);
 
@@ -290,5 +293,23 @@ public class ProductVariantServiceImpl implements ProductVariantService {
         }
 
         throw new IllegalStateException("Could not generate a unique SKU for product " + product.getId());
+    }
+
+    private void applyVariantShippingDefaults(ProductVariant variant, Product product) {
+        if (variant.getShippingWeightGrams() == null) {
+            if (product != null && product.getShippingWeightGrams() != null) {
+                variant.setShippingWeightGrams(product.getShippingWeightGrams());
+                variant.setPackageLengthCm(product.getPackageLengthCm());
+                variant.setPackageWidthCm(product.getPackageWidthCm());
+                variant.setPackageHeightCm(product.getPackageHeightCm());
+            } else {
+                String catName = (product != null && product.getCategory() != null) ? product.getCategory().getName() : null;
+                CategoryShippingDefaults.ShippingPreset preset = CategoryShippingDefaults.forCategory(catName);
+                variant.setShippingWeightGrams(preset.weightGrams());
+                variant.setPackageLengthCm(preset.lengthCm());
+                variant.setPackageWidthCm(preset.widthCm());
+                variant.setPackageHeightCm(preset.heightCm());
+            }
+        }
     }
 }

@@ -38,6 +38,7 @@ import com.stylenest.stylenest_backend.service.ProductSearchMeta;
 import com.stylenest.stylenest_backend.service.ProductService;
 import com.stylenest.stylenest_backend.service.ProductThumbnailResolver;
 import com.stylenest.stylenest_backend.specification.ProductSpecification;
+import com.stylenest.stylenest_backend.util.CategoryShippingDefaults;
 import com.stylenest.stylenest_backend.util.SkuGenerator;
 import com.stylenest.stylenest_backend.util.SlugUtil;
 
@@ -75,6 +76,7 @@ public class ProductServiceImpl implements ProductService {
 
         product.setSlug(slug);
         product.setCategory(category);
+        applyCategoryShippingDefaultsIfNull(product, category);
 
         // Deterministic short product code (e.g. "UGT") used as the prefix
         // for every variant SKU -- see SkuGenerator.
@@ -223,6 +225,7 @@ public class ProductServiceImpl implements ProductService {
         assertJeansCodeAvailable(product.getJeansCode(), id);
 
         product.setCategory(category);
+        applyCategoryShippingDefaultsIfNull(product, category);
 
         Product updatedProduct = productRepository.save(product);
 
@@ -391,5 +394,19 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public List<ProductJeansCodeResponse> getAllJeansCodes() {
         return productRepository.findAllJeansCodes();
+    }
+
+    private void applyCategoryShippingDefaultsIfNull(Product product, Category category) {
+        if (product.getShippingWeightGrams() == null) {
+            CategoryShippingDefaults.ShippingPreset preset =
+                    CategoryShippingDefaults.forCategory(category != null ? category.getName() : null);
+            product.setShippingWeightGrams(preset.weightGrams());
+            if (product.getPackageLengthCm() == null) product.setPackageLengthCm(preset.lengthCm());
+            if (product.getPackageWidthCm() == null) product.setPackageWidthCm(preset.widthCm());
+            if (product.getPackageHeightCm() == null) product.setPackageHeightCm(preset.heightCm());
+            if (product.getHsnCode() == null || product.getHsnCode().trim().isEmpty()) {
+                product.setHsnCode(preset.defaultHsnCode());
+            }
+        }
     }
 }
