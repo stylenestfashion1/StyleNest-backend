@@ -22,6 +22,7 @@ public class BulkProductMapper {
                 .hsnCode(product.getHsnCode())
                 .categoryId(product.getCategory().getId())
                 .categoryName(product.getCategory().getName())
+                .categoryGender(product.getCategory().getGender())
                 .active(product.getActive())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())

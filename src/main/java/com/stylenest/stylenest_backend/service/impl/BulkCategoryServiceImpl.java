@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.stylenest.stylenest_backend.dto.bulk.BulkCategoryRequest;
 import com.stylenest.stylenest_backend.dto.bulk.BulkCategoryResponse;
 import com.stylenest.stylenest_backend.entity.BulkCategory;
+import com.stylenest.stylenest_backend.enums.Gender;
 import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.exception.DuplicateResourceException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
@@ -31,14 +32,15 @@ public class BulkCategoryServiceImpl implements BulkCategoryService {
     @Override
     public BulkCategoryResponse createCategory(BulkCategoryRequest request) {
 
-        if (bulkCategoryRepository.existsByNameIgnoreCase(request.getName())) {
+        Gender gender = request.getGender() != null ? request.getGender() : Gender.WOMEN;
+        if (bulkCategoryRepository.existsByNameIgnoreCaseAndGender(request.getName(), gender)) {
             throw new DuplicateResourceException(
-                    "Bulk category '" + request.getName() + "' already exists.");
+                    "Bulk category '" + request.getName() + "' for " + gender + " already exists.");
         }
 
         BulkCategory category = bulkCategoryMapper.toEntity(request);
-
-        category.setSlug(SlugUtil.generateSlug(request.getName()));
+        category.setGender(gender);
+        category.setSlug(SlugUtil.generateSlug(gender.name().toLowerCase() + "-" + request.getName()));
 
         category = bulkCategoryRepository.save(category);
 
@@ -77,17 +79,19 @@ public class BulkCategoryServiceImpl implements BulkCategoryService {
 
         BulkCategory category = findById(id);
 
-        boolean nameChanged = !category.getName().equalsIgnoreCase(request.getName());
+        Gender targetGender = request.getGender() != null ? request.getGender() : category.getGender();
+        boolean nameOrGenderChanged = !category.getName().equalsIgnoreCase(request.getName())
+                || !category.getGender().equals(targetGender);
 
-        if (nameChanged && bulkCategoryRepository.existsByNameIgnoreCase(request.getName())) {
+        if (nameOrGenderChanged && bulkCategoryRepository.existsByNameIgnoreCaseAndGender(request.getName(), targetGender)) {
             throw new DuplicateResourceException(
-                    "Bulk category '" + request.getName() + "' already exists.");
+                    "Bulk category '" + request.getName() + "' for " + targetGender + " already exists.");
         }
 
         bulkCategoryMapper.updateEntity(category, request);
 
-        if (nameChanged) {
-            category.setSlug(SlugUtil.generateSlug(request.getName()));
+        if (nameOrGenderChanged) {
+            category.setSlug(SlugUtil.generateSlug(targetGender.name().toLowerCase() + "-" + request.getName()));
         }
 
         category = bulkCategoryRepository.save(category);

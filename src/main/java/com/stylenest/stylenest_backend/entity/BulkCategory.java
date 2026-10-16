@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import com.stylenest.stylenest_backend.enums.Gender;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -14,7 +16,13 @@ import lombok.*;
  * customer-facing catalog.
  */
 @Entity
-@Table(name = "bulk_categories")
+@Table(
+        name = "bulk_categories",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_bulk_category_name_gender",
+                columnNames = {"name", "gender"}
+        )
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -26,8 +34,12 @@ public class BulkCategory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Gender gender;
 
     @Column(nullable = false, unique = true)
     private String slug;

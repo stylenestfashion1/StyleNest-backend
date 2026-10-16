@@ -2,6 +2,8 @@ package com.stylenest.stylenest_backend.dto.bulk;
 
 import java.time.LocalDateTime;
 
+import com.stylenest.stylenest_backend.enums.Gender;
+
 import lombok.*;
 
 @Data
@@ -12,6 +14,7 @@ public class BulkCategoryResponse {
 
     private Long id;
     private String name;
+    private Gender gender;
     private String slug;
     private String description;
     private String imageUrl;
