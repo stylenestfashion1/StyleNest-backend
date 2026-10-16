@@ -10,12 +10,17 @@ public class BulkProductMapper {
 
     public BulkProductResponse toResponse(BulkProduct product) {
 
+        java.util.List<String> images = product.getImageUrls() != null && !product.getImageUrls().isEmpty()
+                ? new java.util.ArrayList<>(product.getImageUrls())
+                : (product.getImageUrl() != null ? java.util.List.of(product.getImageUrl()) : java.util.List.of());
+
         return BulkProductResponse.builder()
                 .id(product.getId())
                 .name(product.getName())
                 .slug(product.getSlug())
                 .description(product.getDescription())
                 .imageUrl(product.getImageUrl())
+                .imageUrls(images)
                 .price(product.getPrice())
                 .minOrderQuantity(product.getMinOrderQuantity())
                 .availableStock(product.getAvailableStock())

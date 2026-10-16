@@ -40,6 +40,13 @@ public class BulkProduct {
 
     private String imageUrl;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "bulk_product_images", joinColumns = @JoinColumn(name = "bulk_product_id"))
+    @Column(name = "image_url")
+    @OrderColumn(name = "display_order")
+    @Builder.Default
+    private java.util.List<String> imageUrls = new java.util.ArrayList<>();
+
     @Column(nullable = false)
     private BigDecimal price;
 

@@ -18,6 +18,8 @@ public class BulkProductResponse {
     private String slug;
     private String description;
     private String imageUrl;
+    @Builder.Default
+    private java.util.List<String> imageUrls = new java.util.ArrayList<>();
     private BigDecimal price;
     private Integer minOrderQuantity;
     private Integer availableStock;

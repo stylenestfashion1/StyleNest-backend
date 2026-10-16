@@ -35,10 +35,17 @@ public class BulkProductServiceImpl implements BulkProductService {
 
         BulkCategory category = findCategory(request.getCategoryId());
 
+        java.util.List<String> images = request.getImageUrls() != null && !request.getImageUrls().isEmpty()
+                ? new java.util.ArrayList<>(request.getImageUrls())
+                : (request.getImageUrl() != null ? new java.util.ArrayList<>(java.util.List.of(request.getImageUrl())) : new java.util.ArrayList<>());
+
+        String primaryImage = !images.isEmpty() ? images.get(0) : request.getImageUrl();
+
         BulkProduct product = BulkProduct.builder()
                 .name(request.getName())
                 .description(request.getDescription())
-                .imageUrl(request.getImageUrl())
+                .imageUrl(primaryImage)
+                .imageUrls(images)
                 .price(request.getPrice())
                 .minOrderQuantity(request.getMinOrderQuantity())
                 .availableStock(request.getAvailableStock())
@@ -105,7 +112,15 @@ public class BulkProductServiceImpl implements BulkProductService {
 
         product.setName(request.getName());
         product.setDescription(request.getDescription());
-        product.setImageUrl(request.getImageUrl());
+        if (request.getImageUrls() != null && !request.getImageUrls().isEmpty()) {
+            product.setImageUrls(new java.util.ArrayList<>(request.getImageUrls()));
+            product.setImageUrl(request.getImageUrls().get(0));
+        } else if (request.getImageUrl() != null) {
+            product.setImageUrl(request.getImageUrl());
+            if (product.getImageUrls() == null || product.getImageUrls().isEmpty()) {
+                product.setImageUrls(new java.util.ArrayList<>(java.util.List.of(request.getImageUrl())));
+            }
+        }
         product.setPrice(request.getPrice());
         product.setMinOrderQuantity(request.getMinOrderQuantity());
         product.setAvailableStock(request.getAvailableStock());
