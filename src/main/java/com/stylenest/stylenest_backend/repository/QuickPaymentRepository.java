@@ -14,4 +14,8 @@ public interface QuickPaymentRepository extends JpaRepository<QuickPayment, Long
     Optional<QuickPayment> findByPaymentNumber(String paymentNumber);
 
     List<QuickPayment> findAllByOrderByCreatedAtDesc();
+
+    List<QuickPayment> findByPaymentStatusAndCreatedAtBefore(
+            com.stylenest.stylenest_backend.enums.PaymentStatus paymentStatus,
+            java.time.LocalDateTime createdAt);
 }

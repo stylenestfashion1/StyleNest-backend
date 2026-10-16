@@ -15,6 +15,8 @@ import com.stylenest.stylenest_backend.repository.BulkOrderRepository;
 import com.stylenest.stylenest_backend.repository.BulkProductRepository;
 import com.stylenest.stylenest_backend.repository.OrderRepository;
 import com.stylenest.stylenest_backend.repository.ProductVariantRepository;
+import com.stylenest.stylenest_backend.repository.QuickPaymentRepository;
+import com.stylenest.stylenest_backend.entity.QuickPayment;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,7 @@ public class AbandonedOrderExpiryScheduler {
     private final BulkOrderRepository bulkOrderRepository;
     private final ProductVariantRepository productVariantRepository;
     private final BulkProductRepository bulkProductRepository;
+    private final QuickPaymentRepository quickPaymentRepository;
 
     private static final int EXPIRY_MINUTES = 30;
 
@@ -90,6 +93,22 @@ public class AbandonedOrderExpiryScheduler {
                         bulkOrder.getBulkOrderNumber(), bulkOrder.getCreatedAt());
             } catch (Exception e) {
                 log.error("Failed to auto-expire bulk order {}: {}", bulkOrder.getBulkOrderNumber(), e.getMessage());
+            }
+        }
+
+        // 3. Expire abandoned quick payments older than 20 minutes (PayGlocal gateway session is 15 mins)
+        LocalDateTime quickPayCutoff = LocalDateTime.now().minusMinutes(20);
+        List<QuickPayment> staleQuickPayments = quickPaymentRepository.findByPaymentStatusAndCreatedAtBefore(
+                PaymentStatus.PENDING, quickPayCutoff);
+
+        for (QuickPayment qp : staleQuickPayments) {
+            try {
+                qp.setPaymentStatus(PaymentStatus.FAILED);
+                quickPaymentRepository.save(qp);
+                log.info("Auto-expired abandoned quick payment {} (created: {})",
+                        qp.getPaymentNumber(), qp.getCreatedAt());
+            } catch (Exception e) {
+                log.error("Failed to auto-expire quick payment {}: {}", qp.getPaymentNumber(), e.getMessage());
             }
         }
     }
