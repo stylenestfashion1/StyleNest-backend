@@ -81,7 +81,7 @@ public class BulkOrderServiceImpl implements BulkOrderService {
                 .shippingState(request.getState().trim())
                 .shippingPostalCode(request.getPostalCode().trim())
                 .shippingCountry(request.getCountry().trim())
-                .paymentMethod(PaymentMethod.COD)
+                .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : PaymentMethod.ONLINE)
                 .paymentStatus(PaymentStatus.PENDING)
                 .orderStatus(OrderStatus.PENDING)
                 .build();
