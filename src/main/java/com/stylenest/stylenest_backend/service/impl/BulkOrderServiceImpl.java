@@ -191,7 +191,7 @@ public class BulkOrderServiceImpl implements BulkOrderService {
             token.setAssignedCustomerPhone(normalizedPhone);
             token.setFirstUsedAt(LocalDateTime.now());
 
-        } else if (!token.getAssignedCustomerEmail().equals(normalizedEmail)
+        } else if (!token.getAssignedCustomerEmail().equalsIgnoreCase(normalizedEmail)
                 || !token.getAssignedCustomerPhone().equals(normalizedPhone)) {
 
             throw new BulkTokenAlreadyAssignedException(
@@ -208,7 +208,17 @@ public class BulkOrderServiceImpl implements BulkOrderService {
     }
 
     private String normalizePhone(String phone) {
-        return phone == null ? "" : phone.replaceAll("[\\s\\-()]", "");
+        if (phone == null) {
+            return "";
+        }
+        String digits = phone.replaceAll("[^0-9]", "");
+        if (digits.length() == 12 && digits.startsWith("91")) {
+            return digits.substring(2);
+        }
+        if (digits.length() == 11 && digits.startsWith("0")) {
+            return digits.substring(1);
+        }
+        return digits;
     }
 
     private String generateBulkOrderNumber() {
