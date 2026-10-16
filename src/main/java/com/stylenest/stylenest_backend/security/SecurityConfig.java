@@ -184,6 +184,7 @@ public class SecurityConfig {
                         // frontend ever hiding the link.
                         .requestMatchers("/api/bulk/customer/**").permitAll()
                         .requestMatchers("/api/bulk/payments/payglocal/**").permitAll()
+                        .requestMatchers("/api/quick-pay/**").permitAll()
 
                         // PRODUCTS (PUBLIC)
                         .requestMatchers(HttpMethod.GET,
@@ -318,6 +319,7 @@ public class SecurityConfig {
                 new UrlBasedCorsConfigurationSource();
 
         source.registerCorsConfiguration("/api/bulk/payments/payglocal/**", gatewayCallbackConfig);
+        source.registerCorsConfiguration("/api/quick-pay/**", gatewayCallbackConfig);
         source.registerCorsConfiguration("/api/payments/webhook", gatewayCallbackConfig);
         source.registerCorsConfiguration("/**", configuration);
 

@@ -30,4 +30,8 @@ public interface EmailService {
     void sendShipmentUpdateEmail(
             String toEmail, String customerName, String orderNumber,
             String courierName, String trackingNumber, com.stylenest.stylenest_backend.enums.ShipmentStatus shipmentStatus);
+
+    void sendQuickPaymentReceiptEmail(
+            String toEmail, String customerName, String paymentNumber,
+            BigDecimal amount, String currency, String note);
 }

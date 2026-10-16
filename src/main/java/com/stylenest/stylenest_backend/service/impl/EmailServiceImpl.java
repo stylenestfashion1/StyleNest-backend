@@ -462,4 +462,57 @@ public class EmailServiceImpl implements EmailService {
 
         return emailShell(body);
     }
+
+    @Override
+    public void sendQuickPaymentReceiptEmail(
+            String toEmail, String customerName, String paymentNumber,
+            BigDecimal amount, String currency, String note) {
+
+        String symbol = "USD".equalsIgnoreCase(currency) ? "$" : "₹";
+        String subject = "StyleNest Fashion - Payment Receipt #" + paymentNumber;
+        String html = """
+                <!DOCTYPE html>
+                <html>
+                <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f9f9f9; padding: 25px; margin: 0;">
+                    <div style="max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 12px; padding: 35px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                        <div style="border-bottom: 2px solid #f3f4f6; padding-bottom: 20px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;">
+                            <h2 style="color: #111827; margin: 0; font-size: 22px; font-weight: 700;">StyleNest Fashion</h2>
+                            <span style="background: #ecfdf5; color: #047857; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; border: 1px solid #a7f3d0;">PAID & VERIFIED</span>
+                        </div>
+                        <p style="color: #374151; font-size: 15px; margin: 0 0 16px 0;">Dear <strong>%s</strong>,</p>
+                        <p style="color: #4b5563; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+                            Thank you! Your payment has been successfully processed and verified.
+                        </p>
+                        <div style="background: #f9fafb; border-radius: 8px; padding: 18px; margin: 20px 0; border: 1px solid #f3f4f6;">
+                            <table style="width: 100%%; font-size: 14px; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Payment Reference:</td>
+                                    <td style="padding: 6px 0; color: #111827; font-weight: 600; text-align: right;">%s</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0; color: #6b7280;">Total Amount Paid:</td>
+                                    <td style="padding: 6px 0; color: #059669; font-weight: 700; font-size: 16px; text-align: right;">%s %s</td>
+                                </tr>
+                                %s
+                            </table>
+                        </div>
+                        <p style="color: #6b7280; font-size: 12px; line-height: 1.5; margin: 25px 0 0 0; border-top: 1px solid #f3f4f6; pt: 15px;">
+                            This is an automated payment confirmation issued by StyleNest Fashion Pvt Ltd.<br>
+                            If you have questions, please contact us at support@stylenestfashion.com.
+                        </p>
+                    </div>
+                </body>
+                </html>
+                """.formatted(
+                customerName != null ? customerName : "Valued Customer",
+                paymentNumber,
+                symbol,
+                amount.toPlainString(),
+                (note != null && !note.isBlank())
+                        ? "<tr><td style=\"padding: 6px 0; color: #6b7280;\">Description / Note:</td><td style=\"padding: 6px 0; color: #111827; text-align: right;\">" + note + "</td></tr>"
+                        : ""
+        );
+
+        send(toEmail, subject, html, null, null, "QuickPaymentReceipt", paymentNumber);
+    }
 }
