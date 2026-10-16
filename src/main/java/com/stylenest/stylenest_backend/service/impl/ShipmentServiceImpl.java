@@ -67,6 +67,8 @@ public class ShipmentServiceImpl implements ShipmentService {
     private final ShipmentMapper shipmentMapper;
     private final CourierTrackingService courierTrackingService;
     private final EmailService emailService;
+    private final com.stylenest.stylenest_backend.service.InvoiceService invoiceService;
+    private final com.stylenest.stylenest_backend.service.InvoiceGenerationService invoiceGenerationService;
 
     @Override
     public ShipmentResponse updateShipment(Long orderId, ShipmentUpdateRequest request) {
@@ -309,6 +311,11 @@ public class ShipmentServiceImpl implements ShipmentService {
                 if (order.getOrderStatus() != com.stylenest.stylenest_backend.enums.OrderStatus.DELIVERED
                         && order.getOrderStatus() != com.stylenest.stylenest_backend.enums.OrderStatus.COMPLETED) {
                     order.setOrderStatus(com.stylenest.stylenest_backend.enums.OrderStatus.DELIVERED);
+                    if (order.getPaymentMethod() == PaymentMethod.COD
+                            && order.getPaymentStatus() != com.stylenest.stylenest_backend.enums.PaymentStatus.PAID) {
+                        order.setPaymentStatus(com.stylenest.stylenest_backend.enums.PaymentStatus.PAID);
+                        sendDeliveredCodInvoiceEmail(order);
+                    }
                     orderRepository.save(order);
                 }
             }
@@ -410,5 +417,28 @@ public class ShipmentServiceImpl implements ShipmentService {
             }
         }
         return Math.max(1, total);
+    }
+
+    private void sendDeliveredCodInvoiceEmail(Order order) {
+        try {
+            var invoice = invoiceGenerationService.generateForRetailOrder(order);
+            byte[] pdf = invoiceService.generatePdf(invoice);
+
+            String recipient = order.getUser() != null ? order.getUser().getEmail() : order.getGuestEmail();
+            String customerName = order.getShippingFullName();
+
+            if (recipient != null && !recipient.isBlank()) {
+                emailService.sendInvoiceEmail(
+                        recipient,
+                        customerName,
+                        invoice.getInvoiceNumber(),
+                        order.getOrderNumber(),
+                        order.getTotalAmount(),
+                        pdf
+                );
+            }
+        } catch (Exception ex) {
+            log.error("Failed to send COD delivery invoice for order #{}: {}", order.getOrderNumber(), ex.getMessage());
+        }
     }
 }

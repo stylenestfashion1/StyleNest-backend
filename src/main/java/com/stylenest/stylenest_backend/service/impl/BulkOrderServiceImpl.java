@@ -35,6 +35,7 @@ import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Deliberately COD-only for now (see PaymentMethod check in placeOrder) --
@@ -45,6 +46,7 @@ import lombok.RequiredArgsConstructor;
  * silently accepting a payment method with no real gateway behind it.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional
 public class BulkOrderServiceImpl implements BulkOrderService {
@@ -134,19 +136,26 @@ public class BulkOrderServiceImpl implements BulkOrderService {
         order = bulkOrderRepository.save(order);
 
         if (order.getPaymentMethod() == PaymentMethod.COD) {
-            sendInvoiceEmailIfPossible(order);
+            sendBulkOrderConfirmationEmailIfPossible(order);
         }
 
         return bulkOrderMapper.toResponse(order);
     }
 
-    /**
-     * Bulk orders are always finalized immediately at placement (COD-only,
-     * no separate payment-confirmation step), so invoice generation and the
-     * invoice email happen right here -- mirroring where retail does it for
-     * COD orders. A failure here must never fail the order itself; see the
-     * same rationale on OrderServiceImpl.sendConfirmationEmailIfNeeded.
-     */
+    private void sendBulkOrderConfirmationEmailIfPossible(BulkOrder order) {
+        try {
+            emailService.sendBulkOrderConfirmationEmail(
+                    order.getCustomerEmail(),
+                    order.getCustomerName(),
+                    order.getBulkOrderNumber(),
+                    order.getTotalAmount(),
+                    order.getPaymentMethod()
+            );
+        } catch (Exception ex) {
+            log.error("Failed to send bulk order confirmation email for #{}: {}", order.getBulkOrderNumber(), ex.getMessage());
+        }
+    }
+
     private void sendInvoiceEmailIfPossible(BulkOrder order) {
 
         try {
@@ -231,6 +240,13 @@ public class BulkOrderServiceImpl implements BulkOrderService {
         BulkOrder order = findById(id);
 
         order.setOrderStatus(request.getOrderStatus());
+
+        if ((request.getOrderStatus() == OrderStatus.DELIVERED || request.getOrderStatus() == OrderStatus.COMPLETED)
+                && order.getPaymentMethod() == PaymentMethod.COD
+                && order.getPaymentStatus() != PaymentStatus.PAID) {
+            order.setPaymentStatus(PaymentStatus.PAID);
+            sendInvoiceEmailIfPossible(order);
+        }
 
         order = bulkOrderRepository.save(order);
 

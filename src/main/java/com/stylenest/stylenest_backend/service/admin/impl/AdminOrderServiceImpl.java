@@ -18,6 +18,7 @@ import com.stylenest.stylenest_backend.dto.order.OrderSummaryResponse;
 import com.stylenest.stylenest_backend.entity.Order;
 import com.stylenest.stylenest_backend.entity.Shipment;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
+import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.ShipmentStatus;
 import com.stylenest.stylenest_backend.exception.BadRequestException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
@@ -130,11 +131,41 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         // ShipmentService, not here.
         order.setOrderStatus(request.getOrderStatus());
 
+        if ((request.getOrderStatus() == OrderStatus.DELIVERED || request.getOrderStatus() == OrderStatus.COMPLETED)
+                && order.getPaymentMethod() == PaymentMethod.COD
+                && order.getPaymentStatus() != com.stylenest.stylenest_backend.enums.PaymentStatus.PAID) {
+            order.setPaymentStatus(com.stylenest.stylenest_backend.enums.PaymentStatus.PAID);
+            sendDeliveredCodInvoiceEmail(order);
+        }
+
         Order updatedOrder = orderRepository.save(order);
 
         sendStatusUpdateEmailIfPossible(updatedOrder);
 
         return orderMapper.toResponse(updatedOrder);
+    }
+
+    private void sendDeliveredCodInvoiceEmail(Order order) {
+        try {
+            var invoice = invoiceGenerationService.generateForRetailOrder(order);
+            byte[] pdf = invoiceService.generatePdf(invoice);
+
+            String recipient = order.getUser() != null ? order.getUser().getEmail() : order.getGuestEmail();
+            String customerName = order.getShippingFullName();
+
+            if (recipient != null && !recipient.isBlank()) {
+                emailService.sendInvoiceEmail(
+                        recipient,
+                        customerName,
+                        invoice.getInvoiceNumber(),
+                        order.getOrderNumber(),
+                        order.getTotalAmount(),
+                        pdf
+                );
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
     // Best-effort, same as order confirmation: a Brevo outage must never

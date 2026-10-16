@@ -103,6 +103,30 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void sendBulkOrderConfirmationEmail(
+            String toEmail, String customerName, String orderReference, BigDecimal totalAmount, com.stylenest.stylenest_backend.enums.PaymentMethod paymentMethod) {
+
+        String subject = "StyleNest Fashion - Wholesale Order #" + orderReference + " Confirmed";
+        String paymentNotice = paymentMethod == com.stylenest.stylenest_backend.enums.PaymentMethod.COD
+                ? "Cash on Delivery (Please keep cash ready at warehouse/delivery handover)"
+                : "Online Payment (Pending / Captured)";
+
+        String body = """
+                <h2 style="font-family:Georgia,serif;font-weight:normal;font-size:20px;color:#1a1a1a;margin:0 0 16px 0;">Wholesale Order Received</h2>
+                <p style="font-size:14px;line-height:1.6;color:#4a4a4a;margin:0 0 24px 0;">Hi %s, thank you for your wholesale bulk order. We have received your order details and our fulfillment team has started processing it.</p>
+                <table style="width:100%%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+                  <tr><td style="padding:8px 0;color:#9a9488;">Order Number</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;">#%s</td></tr>
+                  <tr><td style="padding:8px 0;color:#9a9488;">Total Amount</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;font-weight:bold;">%s</td></tr>
+                  <tr><td style="padding:8px 0;color:#9a9488;">Payment Mode</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;">%s</td></tr>
+                  <tr><td style="padding:8px 0;color:#9a9488;">Invoice Status</td><td style="padding:8px 0;text-align:right;color:#a08b6f;font-weight:bold;">Official Tax Invoice will be issued upon delivery & payment clearance</td></tr>
+                </table>
+                <p style="font-size:12px;color:#9a9488;margin:20px 0 0 0;">For any urgent dispatch coordination, reach out to StyleNest Wholesale Support.</p>
+                """.formatted(customerName, orderReference, currency(totalAmount), paymentNotice);
+
+        send(toEmail, subject, emailShell(body), null, null, "bulk order confirmation", orderReference);
+    }
+
+    @Override
     public void sendShipmentUpdateEmail(
             String toEmail, String customerName, String orderNumber,
             String courierName, String trackingNumber, ShipmentStatus shipmentStatus) {
@@ -361,10 +385,28 @@ public class EmailServiceImpl implements EmailService {
                 <tr><td style="padding:6px 0;color:#9a9488;font-size:13px;">Tracking Number</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#1a1a1a;font-weight:bold;">%s (DTDC)</td></tr>
                 """.formatted(data.getTrackingNumber());
 
+        boolean isCod = data.getPaymentMethod() == PaymentMethod.COD;
+
+        String codBanner = isCod ? """
+                <div style="margin:20px 0;padding:14px 18px;background:#fbf8f2;border:1px solid #ebdcc5;border-radius:4px;">
+                  <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#8a6020;margin-bottom:4px;">Cash on Delivery Order</div>
+                  <div style="font-size:13px;color:#5a431c;line-height:1.5;">Please keep <strong>%s</strong> ready at the time of delivery. Official GST Tax Invoice will be issued upon cash handover.</div>
+                </div>
+                """.formatted(currency(data.getTotalAmount())) : "";
+
+        String invoiceFooterText = isCod
+                ? "Official GST Tax Invoice will be issued upon delivery and payment collection."
+                : "Your invoice is attached to this email.";
+
+        String displayedInvoiceNumber = isCod && (data.getInvoiceNumber() == null || data.getInvoiceNumber().startsWith("Pending"))
+                ? "Issued upon delivery"
+                : (data.getInvoiceNumber() == null ? "-" : data.getInvoiceNumber());
+
         String body = """
                 <h2 style="font-family:Georgia,serif;font-weight:normal;font-size:20px;color:#1a1a1a;margin:0 0 4px 0;">Order Confirmed</h2>
                 <p style="font-size:13px;color:#9a9488;margin:0 0 24px 0;">Order #%s &middot; %s</p>
-                <p style="font-size:14px;line-height:1.6;color:#4a4a4a;margin:0 0 24px 0;">Hi %s, your order has been placed successfully.</p>
+                <p style="font-size:14px;line-height:1.6;color:#4a4a4a;margin:0 0 16px 0;">Hi %s, your order has been placed successfully.</p>
+                %s
 
                 <table style="width:100%%;border-collapse:collapse;margin-bottom:16px;">
                   <tr>
@@ -394,15 +436,16 @@ public class EmailServiceImpl implements EmailService {
                   </p>
                 </div>
 
-                <p style="font-size:12px;color:#9a9488;margin-top:24px;">Your invoice is attached to this email.</p>
+                <p style="font-size:12px;color:#9a9488;margin-top:24px;">%s</p>
                 """.formatted(
                 data.getOrderNumber(),
                 data.getOrderDate() == null ? "" : data.getOrderDate().format(ORDER_DATE_FORMAT),
                 data.getCustomerName(),
+                codBanner,
                 itemRows.toString(),
                 subtotalRow,
                 currency(data.getTotalAmount()),
-                data.getInvoiceNumber() == null ? "-" : data.getInvoiceNumber(),
+                displayedInvoiceNumber,
                 paymentMethodLabel,
                 paymentStatusLabel,
                 data.getOrderStatus() == null ? "" : orderStatusLabel(data.getOrderStatus()),
@@ -413,7 +456,8 @@ public class EmailServiceImpl implements EmailService {
                 data.getShippingCity(),
                 data.getShippingState(),
                 data.getShippingPostalCode(),
-                data.getShippingCountry()
+                data.getShippingCountry(),
+                invoiceFooterText
         );
 
         return emailShell(body);

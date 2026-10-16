@@ -691,9 +691,16 @@ public class OrderServiceImpl implements OrderService {
         }
 
         try {
+            boolean isPaid = order.getPaymentStatus() == PaymentStatus.PAID;
+            Invoice invoice = null;
+            byte[] invoicePdf = null;
+            String invoiceNumber = "Pending on Delivery";
 
-            Invoice invoice = invoiceGenerationService.generateForRetailOrder(order);
-            byte[] invoicePdf = invoiceService.generatePdf(invoice);
+            if (isPaid) {
+                invoice = invoiceGenerationService.generateForRetailOrder(order);
+                invoicePdf = invoiceService.generatePdf(invoice);
+                invoiceNumber = invoice.getInvoiceNumber();
+            }
 
             List<InvoiceItemResponse> items = order.getOrderItems().stream()
                     .map(item -> InvoiceItemResponse.builder()
@@ -726,7 +733,7 @@ public class OrderServiceImpl implements OrderService {
             OrderConfirmationEmailData data = OrderConfirmationEmailData.builder()
                     .customerName(order.getShippingFullName())
                     .orderNumber(order.getOrderNumber())
-                    .invoiceNumber(invoice.getInvoiceNumber())
+                    .invoiceNumber(invoiceNumber)
                     .orderDate(order.getCreatedAt())
                     .items(items)
                     .subtotal(subtotal)

@@ -15,6 +15,9 @@ public interface EmailService {
 
     void sendOrderStatusUpdateEmail(String toEmail, String customerName, String orderNumber, OrderStatus status);
 
+    void sendBulkOrderConfirmationEmail(
+            String toEmail, String customerName, String orderReference, BigDecimal totalAmount, com.stylenest.stylenest_backend.enums.PaymentMethod paymentMethod);
+
     /**
      * A generic "here's your invoice" email -- used for bulk orders (which
      * have no richer order-confirmation template) and as the target of the

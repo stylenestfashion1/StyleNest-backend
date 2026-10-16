@@ -58,6 +58,12 @@ class ShipmentServiceImplTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private com.stylenest.stylenest_backend.service.InvoiceService invoiceService;
+
+    @Mock
+    private com.stylenest.stylenest_backend.service.InvoiceGenerationService invoiceGenerationService;
+
     private ShipmentServiceImpl shipmentService;
 
     private Order order;
@@ -67,7 +73,7 @@ class ShipmentServiceImplTest {
     void setUp() {
 
         shipmentService = new ShipmentServiceImpl(
-                orderRepository, shipmentRepository, shipmentHistoryRepository, new ShipmentMapper(), courierTrackingService, emailService);
+                orderRepository, shipmentRepository, shipmentHistoryRepository, new ShipmentMapper(), courierTrackingService, emailService, invoiceService, invoiceGenerationService);
 
         order = Order.builder()
                 .id(1L)
