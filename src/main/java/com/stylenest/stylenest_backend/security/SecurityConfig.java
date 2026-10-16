@@ -308,9 +308,17 @@ public class SecurityConfig {
 
         configuration.setAllowCredentials(true);
 
+        CorsConfiguration gatewayCallbackConfig = new CorsConfiguration();
+        gatewayCallbackConfig.addAllowedOriginPattern("*");
+        gatewayCallbackConfig.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        gatewayCallbackConfig.setAllowedHeaders(List.of("*"));
+        gatewayCallbackConfig.setAllowCredentials(false);
+
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
 
+        source.registerCorsConfiguration("/api/bulk/payments/payglocal/**", gatewayCallbackConfig);
+        source.registerCorsConfiguration("/api/payments/webhook", gatewayCallbackConfig);
         source.registerCorsConfiguration("/**", configuration);
 
         return source;

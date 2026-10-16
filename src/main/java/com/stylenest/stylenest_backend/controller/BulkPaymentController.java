@@ -1,8 +1,11 @@
 package com.stylenest.stylenest_backend.controller;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -11,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.view.RedirectView;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylenest.stylenest_backend.dto.bulk.payment.PayGlocalInitiateRequest;
 import com.stylenest.stylenest_backend.dto.bulk.payment.PayGlocalInitiateResponse;
 import com.stylenest.stylenest_backend.response.ApiResponse;
@@ -22,11 +27,13 @@ import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 @Slf4j
 public class BulkPaymentController {
 
     private final PayGlocalService payGlocalService;
+    private final ObjectMapper objectMapper;
 
     /**
      * Customer initiates PayGlocal checkout for their wholesale order.
@@ -41,13 +48,37 @@ public class BulkPaymentController {
     }
 
     /**
-     * Browser callback URL called by PayGlocal upon payment completion.
+     * Browser callback URL called by PayGlocal upon payment completion / cancellation (GET redirect).
+     * Public endpoint -- redirects buyer to the StyleNest frontend order confirmation page.
+     */
+    @GetMapping("/api/bulk/payments/payglocal/callback")
+    public RedirectView handleCallbackGet(@RequestParam Map<String, String> queryParams) {
+        log.info("Received PayGlocal browser GET callback redirect: {}", queryParams);
+        String targetUrl = payGlocalService.handleCallback(queryParams);
+        return new RedirectView(targetUrl);
+    }
+
+    /**
+     * Browser callback URL called by PayGlocal upon payment completion / cancellation (POST form/body redirect).
      * Public endpoint -- redirects buyer to the StyleNest frontend order confirmation page.
      */
     @PostMapping("/api/bulk/payments/payglocal/callback")
-    public RedirectView handleCallback(@RequestParam Map<String, String> formData) {
-        log.info("Received PayGlocal browser callback redirect");
-        String targetUrl = payGlocalService.handleCallback(formData);
+    public RedirectView handleCallbackPost(
+            @RequestParam(required = false) Map<String, String> formData,
+            @RequestBody(required = false) String rawBody) {
+
+        log.info("Received PayGlocal browser POST callback redirect. Form: {}, Body: {}", formData, rawBody);
+        Map<String, String> combined = new HashMap<>();
+        if (formData != null) {
+            combined.putAll(formData);
+        }
+        if (rawBody != null && rawBody.trim().startsWith("{")) {
+            try {
+                Map<String, String> bodyMap = objectMapper.readValue(rawBody, new TypeReference<Map<String, String>>() {});
+                combined.putAll(bodyMap);
+            } catch (Exception ignored) {}
+        }
+        String targetUrl = payGlocalService.handleCallback(combined);
         return new RedirectView(targetUrl);
     }
 
