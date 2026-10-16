@@ -183,6 +183,7 @@ public class SecurityConfig {
                         // single request to this path, independent of the
                         // frontend ever hiding the link.
                         .requestMatchers("/api/bulk/customer/**").permitAll()
+                        .requestMatchers("/api/bulk/payments/payglocal/**").permitAll()
 
                         // PRODUCTS (PUBLIC)
                         .requestMatchers(HttpMethod.GET,

@@ -51,6 +51,8 @@ run-local.sh
 *.pfx
 *.jks
 *.keystore
+keys/
+src/main/resources/keys/
 
 ### Logs ###
 *.log

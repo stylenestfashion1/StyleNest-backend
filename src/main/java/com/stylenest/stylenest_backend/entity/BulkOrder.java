@@ -93,6 +93,10 @@ public class BulkOrder {
     @Builder.Default
     private OrderStatus orderStatus = OrderStatus.PENDING;
 
+    // PayGlocal B2B wholesale payment tracking
+    private String payglocalGid;
+    private String payglocalTxnId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

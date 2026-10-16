@@ -60,10 +60,9 @@ public class BulkOrderServiceImpl implements BulkOrderService {
     @Override
     public BulkOrderResponse placeOrder(BulkAccessToken token, BulkOrderRequest request) {
 
-        if (request.getPaymentMethod() != PaymentMethod.COD) {
+        if (request.getPaymentMethod() != PaymentMethod.COD && request.getPaymentMethod() != PaymentMethod.ONLINE) {
             throw new BadRequestException(
-                    "Only Cash on Delivery is currently supported for bulk orders. "
-                            + "Please contact the shop directly for other payment arrangements.");
+                    "Only Online payment (PayGlocal) or Cash on Delivery is supported for bulk orders.");
         }
 
         enforceOneCustomerPerToken(token, request);
@@ -134,7 +133,9 @@ public class BulkOrderServiceImpl implements BulkOrderService {
 
         order = bulkOrderRepository.save(order);
 
-        sendInvoiceEmailIfPossible(order);
+        if (order.getPaymentMethod() == PaymentMethod.COD) {
+            sendInvoiceEmailIfPossible(order);
+        }
 
         return bulkOrderMapper.toResponse(order);
     }
