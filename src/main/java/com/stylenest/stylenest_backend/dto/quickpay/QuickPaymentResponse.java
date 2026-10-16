@@ -22,5 +22,13 @@ public class QuickPaymentResponse {
     private String note;
     private PaymentStatus paymentStatus;
     private String redirectUrl;
+    private String payglocalTxnId;
+    private String payglocalGid;
+    private String addressLine1;
+    private String city;
+    private String state;
+    private String country;
+    private String postalCode;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

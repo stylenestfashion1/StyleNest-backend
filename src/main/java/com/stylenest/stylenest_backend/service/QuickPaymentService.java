@@ -12,4 +12,6 @@ public interface QuickPaymentService {
     String handleCallback(Map<String, String> formData);
 
     QuickPaymentResponse getPaymentStatus(String paymentNumber);
+
+    java.util.List<QuickPaymentResponse> getAllQuickPayments();
 }

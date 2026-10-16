@@ -255,6 +255,15 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
         return mapToResponse(payment, null);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.List<QuickPaymentResponse> getAllQuickPayments() {
+        return quickPaymentRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(p -> mapToResponse(p, null))
+                .toList();
+    }
+
     private void sendReceiptEmail(QuickPayment payment) {
         try {
             emailService.sendQuickPaymentReceiptEmail(
@@ -283,7 +292,15 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
                 .note(payment.getNote())
                 .paymentStatus(payment.getPaymentStatus())
                 .redirectUrl(redirectUrl)
+                .payglocalTxnId(payment.getPayglocalTxnId())
+                .payglocalGid(payment.getPayglocalGid())
+                .addressLine1(payment.getAddressLine1())
+                .city(payment.getCity())
+                .state(payment.getState())
+                .country(payment.getCountry())
+                .postalCode(payment.getPostalCode())
                 .createdAt(payment.getCreatedAt())
+                .updatedAt(payment.getUpdatedAt())
                 .build();
     }
 
