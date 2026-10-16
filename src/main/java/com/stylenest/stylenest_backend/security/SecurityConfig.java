@@ -80,8 +80,14 @@ public class SecurityConfig {
                                 "/webjars/**"
                         ).permitAll()
 
+                        // ERROR DISPATCH
+                        .requestMatchers("/error").permitAll()
+
                         // AUTH
                         .requestMatchers("/api/auth/**").permitAll()
+
+                        // QUICK PAY (DIRECT B2B SETTLEMENTS)
+                        .requestMatchers("/api/quick-pay/**").permitAll()
 
                         // PAYMENT GATEWAY WEBHOOK (Cashfree posts here
                         // server-to-server with no StyleNest JWT --
