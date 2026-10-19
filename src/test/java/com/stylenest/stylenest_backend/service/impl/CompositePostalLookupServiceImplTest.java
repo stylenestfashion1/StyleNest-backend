@@ -164,6 +164,26 @@ class CompositePostalLookupServiceImplTest {
     }
 
     @Test
+    void lookup_uk_outcode_resolvesToLondon() {
+
+        setUp();
+
+        mockServer.expect(requestTo("https://api.postcodes.io/outcodes/SW1A"))
+                .andRespond(withSuccess(
+                        "{\"status\":200,\"result\":{\"outcode\":\"SW1A\",\"admin_district\":[\"Wandsworth\",\"Westminster\"],\"country\":[\"England\"]}}",
+                        MediaType.APPLICATION_JSON));
+
+        PostalLookupResponse response = service.lookup("gb", "SW1A");
+
+        assertThat(response.isFound()).isTrue();
+        assertThat(response.getCity()).isEqualTo("London");
+        assertThat(response.getState()).isEqualTo("England");
+        assertThat(response.getCountry()).isEqualTo("United Kingdom");
+
+        mockServer.verify();
+    }
+
+    @Test
     void lookup_uk_regionOutsideLondon_usesAdminDistrict() {
 
         setUp();

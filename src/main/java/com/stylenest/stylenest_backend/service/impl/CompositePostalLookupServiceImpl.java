@@ -12,29 +12,14 @@ import com.stylenest.stylenest_backend.dto.postal.PostalLookupResponse;
 import com.stylenest.stylenest_backend.service.PostalLookupService;
 
 /**
- * Country-aware ZIP/postal code -> city/region lookup. Routes to whichever
+ * Composite postal-code lookup implementation routing to whichever
  * provider gives usable city-level data for a given country -- there is no
  * single free source with good coverage everywhere:
  *
- *  - India (IN): India Post's official pincode API
- *    (api.postalpincode.in). Zippopotam's India dataset has no
- *    city/district field at all -- every entry is a hyper-local
- *    post-office name (e.g. "Haji S Musafarkhana" for Mumbai 400001, never
- *    "Mumbai" itself, at any position) -- so a different source was
- *    required, not just a different field.
- *  - United Kingdom (GB): postcodes.io (ONS open data). Zippopotam only
- *    supports UK "outward" codes (e.g. "SW1A", not full "SW1A 1AA") and
- *    even then returns landmark names ("Buckingham Palace"), never a city.
- *  - Everyone else (US, AU, CA, ...): api.zippopotam.us, unchanged. For
- *    Australia specifically, its data does include a proper city entry per
- *    postcode (e.g. "Sydney" alongside "The Rocks"/"Haymarket" for 2000)
- *    but not always first in the list, so a known state/territory capital
- *    is preferred over places[0] when present. Canada's Zippopotam data is
- *    locality-level only and doesn't resolve full 6-character postal codes
- *    at all; no reliable free/keyless alternative was found (geocoder.ca
- *    throttles to the point of being unusable in production), so CA
- *    deliberately still resolves to not-found -- the frontend already
- *    falls back to manual city/state entry gracefully.
+ *  - India (IN): India Post's official pincode API (api.postalpincode.in).
+ *  - United Kingdom (GB): postcodes.io (supports both full postcodes like
+ *    SW1A 1AA and outcodes/area codes like SW1A, EC1, W1).
+ *  - Everyone else (US, AU, CA, ...): api.zippopotam.us.
  */
 @Service
 public class CompositePostalLookupServiceImpl implements PostalLookupService {
@@ -87,11 +72,6 @@ public class CompositePostalLookupServiceImpl implements PostalLookupService {
     @SuppressWarnings("unchecked")
     private PostalLookupResponse lookupIndia(String postalCode) {
 
-        // api.postalpincode.in resets the connection for requests with no
-        // (or Java's default) User-Agent -- confirmed live: identical
-        // request succeeds once a real User-Agent is set. Every other
-        // provider here works fine without one; this is specific to this
-        // one API's own basic anti-bot filtering.
         List<Object> body = restClient.get()
                 .uri(indiaBaseUrl + "/pincode/{code}", postalCode)
                 .header("User-Agent", "StyleNest-Backend/1.0")
@@ -127,10 +107,77 @@ public class CompositePostalLookupServiceImpl implements PostalLookupService {
     @SuppressWarnings("unchecked")
     private PostalLookupResponse lookupUk(String postalCode) {
 
-        Map<String, Object> body = restClient.get()
-                .uri(ukBaseUrl + "/postcodes/{code}", postalCode)
-                .retrieve()
-                .body(Map.class);
+        String clean = postalCode.trim();
+        String normalized = clean.replaceAll("\\s+", "");
+
+        // UK full postcodes end with [digit][letter][letter] (e.g. 1AA, 4NP) and are at least 5 chars.
+        // Outward codes (e.g. SW1A, W1, EC1, M1) are 2-4 chars and represent districts/towns.
+        boolean isOutcode = normalized.length() <= 4 || !normalized.matches(".*\\d[A-Za-z]{2}$");
+
+        if (isOutcode) {
+            Map<String, Object> body;
+            try {
+                body = restClient.get()
+                        .uri(ukBaseUrl + "/outcodes/{code}", normalized)
+                        .retrieve()
+                        .body(Map.class);
+            } catch (Exception ex) {
+                return PostalLookupResponse.notFound();
+            }
+
+            if (body == null || !(body.get("result") instanceof Map<?, ?> resultRaw)) {
+                return PostalLookupResponse.notFound();
+            }
+
+            Map<String, Object> result = (Map<String, Object>) resultRaw;
+
+            String city = null;
+            Object adminDistrictObj = result.get("admin_district");
+            if (adminDistrictObj instanceof List<?> list && !list.isEmpty()) {
+                for (Object item : list) {
+                    String d = stringOrNull(item);
+                    if (d != null && (d.toLowerCase().contains("london") || d.equalsIgnoreCase("westminster"))) {
+                        city = "London";
+                        break;
+                    }
+                }
+                if (city == null) {
+                    city = stringOrNull(list.get(0));
+                }
+            } else if (adminDistrictObj != null) {
+                city = stringOrNull(adminDistrictObj);
+            }
+
+            String state = "England";
+            Object countryObj = result.get("country");
+            if (countryObj instanceof List<?> list && !list.isEmpty()) {
+                state = stringOrNull(list.get(0));
+            } else if (countryObj != null) {
+                state = stringOrNull(countryObj);
+            }
+
+            if (city == null) {
+                return PostalLookupResponse.notFound();
+            }
+
+            return PostalLookupResponse.builder()
+                    .found(true)
+                    .city(city)
+                    .state(state != null ? state : "England")
+                    .country("United Kingdom")
+                    .build();
+        }
+
+        // Full postcode lookup (e.g. SW1A 1AA or SW1A1AA)
+        Map<String, Object> body;
+        try {
+            body = restClient.get()
+                    .uri(ukBaseUrl + "/postcodes/{code}", normalized)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (Exception ex) {
+            return PostalLookupResponse.notFound();
+        }
 
         if (body == null || !(body.get("result") instanceof Map<?, ?> resultRaw)) {
             return PostalLookupResponse.notFound();
@@ -141,13 +188,7 @@ public class CompositePostalLookupServiceImpl implements PostalLookupService {
         String region = stringOrNull(result.get("region"));
         String adminDistrict = stringOrNull(result.get("admin_district"));
 
-        // "region" is one of 9 broad England-only groupings (North West,
-        // South East, ...) -- useless as a city name -- EXCEPT "London",
-        // which uniquely is both the region name and the real post town
-        // for everything inside it. Everywhere else, admin_district (the
-        // borough/city/town, e.g. "Manchester", "Cardiff") is the closer
-        // match to what a checkout form's "city" field expects.
-        String city = "London".equals(region) ? "London" : adminDistrict;
+        String city = "London".equalsIgnoreCase(region) ? "London" : adminDistrict;
 
         if (city == null) {
             return PostalLookupResponse.notFound();
@@ -191,11 +232,6 @@ public class CompositePostalLookupServiceImpl implements PostalLookupService {
                 .build();
     }
 
-    // Zippopotam's Australian data includes the actual capital city as one
-    // of several entries for a postcode (e.g. 2000 lists "The Rocks",
-    // "Haymarket", ... AND "Sydney") but not necessarily first -- prefer
-    // the capital when present rather than whichever suburb happens to
-    // land at places[0].
     private Map<String, Object> findAuCapitalOrFirst(List<Map<String, Object>> places) {
 
         for (Map<String, Object> place : places) {
