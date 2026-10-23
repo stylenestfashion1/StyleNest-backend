@@ -117,10 +117,15 @@ public class BulkOrderServiceImpl implements BulkOrderService {
 
             BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
 
+            String snapshotName = product.getName();
+            if (itemRequest.getSelectedColor() != null && !itemRequest.getSelectedColor().trim().isEmpty()) {
+                snapshotName += " (" + itemRequest.getSelectedColor().trim() + ")";
+            }
+
             BulkOrderItem item = BulkOrderItem.builder()
                     .bulkOrder(order)
                     .bulkProduct(product)
-                    .productNameSnapshot(product.getName())
+                    .productNameSnapshot(snapshotName)
                     .quantity(itemRequest.getQuantity())
                     .unitPrice(product.getPrice())
                     .subtotal(subtotal)
