@@ -47,6 +47,9 @@ public class BulkProduct {
     @Builder.Default
     private java.util.List<String> imageUrls = new java.util.ArrayList<>();
 
+    @Column(name = "colors_json", columnDefinition = "LONGTEXT")
+    private String colorsJson;
+
     @Column(nullable = false)
     private BigDecimal price;
 

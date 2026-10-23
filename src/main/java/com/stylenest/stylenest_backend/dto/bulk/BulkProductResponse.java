@@ -20,6 +20,8 @@ public class BulkProductResponse {
     private String imageUrl;
     @Builder.Default
     private java.util.List<String> imageUrls = new java.util.ArrayList<>();
+    @Builder.Default
+    private java.util.List<BulkColorOption> colors = new java.util.ArrayList<>();
     private BigDecimal price;
     private Integer minOrderQuantity;
     private Integer availableStock;

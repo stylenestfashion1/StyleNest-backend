@@ -16,19 +16,23 @@ import com.stylenest.stylenest_backend.repository.BulkCategoryRepository;
 import com.stylenest.stylenest_backend.repository.BulkOrderItemRepository;
 import com.stylenest.stylenest_backend.repository.BulkProductRepository;
 import com.stylenest.stylenest_backend.service.BulkProductService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylenest.stylenest_backend.util.SlugUtil;
+import lombok.extern.slf4j.Slf4j;
 
 import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class BulkProductServiceImpl implements BulkProductService {
 
     private final BulkProductRepository bulkProductRepository;
     private final BulkCategoryRepository bulkCategoryRepository;
     private final BulkOrderItemRepository bulkOrderItemRepository;
     private final BulkProductMapper bulkProductMapper;
+    private final ObjectMapper objectMapper;
 
     @Override
     public BulkProductResponse createProduct(BulkProductRequest request) {
@@ -40,12 +44,30 @@ public class BulkProductServiceImpl implements BulkProductService {
                 : (request.getImageUrl() != null ? new java.util.ArrayList<>(java.util.List.of(request.getImageUrl())) : new java.util.ArrayList<>());
 
         String primaryImage = !images.isEmpty() ? images.get(0) : request.getImageUrl();
+        if ((primaryImage == null || primaryImage.isBlank()) && request.getColors() != null && !request.getColors().isEmpty()) {
+            for (var c : request.getColors()) {
+                if (c.getImages() != null && !c.getImages().isEmpty()) {
+                    primaryImage = c.getImages().get(0);
+                    break;
+                }
+            }
+        }
+
+        String colorsJson = null;
+        if (request.getColors() != null && !request.getColors().isEmpty()) {
+            try {
+                colorsJson = objectMapper.writeValueAsString(request.getColors());
+            } catch (Exception e) {
+                log.warn("Failed to serialize colors for bulk product: {}", e.getMessage());
+            }
+        }
 
         BulkProduct product = BulkProduct.builder()
                 .name(request.getName())
                 .description(request.getDescription())
                 .imageUrl(primaryImage)
                 .imageUrls(images)
+                .colorsJson(colorsJson)
                 .price(request.getPrice())
                 .minOrderQuantity(request.getMinOrderQuantity())
                 .availableStock(request.getAvailableStock())
@@ -127,6 +149,14 @@ public class BulkProductServiceImpl implements BulkProductService {
         product.setHsnCode(request.getHsnCode());
         product.setCategory(category);
         product.setActive(request.getActive());
+
+        if (request.getColors() != null) {
+            try {
+                product.setColorsJson(objectMapper.writeValueAsString(request.getColors()));
+            } catch (Exception e) {
+                log.warn("Failed to serialize colors on update for bulk product {}: {}", id, e.getMessage());
+            }
+        }
 
         product = bulkProductRepository.save(product);
 
