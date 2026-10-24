@@ -261,7 +261,7 @@ public class DiscountOfferServiceImpl implements DiscountOfferService {
 
     private MobileNumberAlreadyUsedException alreadyUsed() {
         return new MobileNumberAlreadyUsedException(
-                "You have already generated your StyleNest discount. Each mobile number can claim this offer only once.");
+                "You have already generated your StyleNest Fashion discount. Each mobile number can claim this offer only once.");
     }
 
     private boolean constantTimeEquals(String a, String b) {

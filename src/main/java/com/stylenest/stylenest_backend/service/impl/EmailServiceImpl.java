@@ -120,7 +120,7 @@ public class EmailServiceImpl implements EmailService {
                   <tr><td style="padding:8px 0;color:#9a9488;">Payment Mode</td><td style="padding:8px 0;text-align:right;color:#1a1a1a;">%s</td></tr>
                   <tr><td style="padding:8px 0;color:#9a9488;">Invoice Status</td><td style="padding:8px 0;text-align:right;color:#a08b6f;font-weight:bold;">Official Tax Invoice will be issued upon delivery & payment clearance</td></tr>
                 </table>
-                <p style="font-size:12px;color:#9a9488;margin:20px 0 0 0;">For any urgent dispatch coordination, reach out to StyleNest Wholesale Support.</p>
+                <p style="font-size:12px;color:#9a9488;margin:20px 0 0 0;">For any urgent dispatch coordination, reach out to StyleNest Fashion Wholesale Support.</p>
                 """.formatted(customerName, orderReference, currency(totalAmount), paymentNotice);
 
         send(toEmail, subject, emailShell(body), null, null, "bulk order confirmation", orderReference);
@@ -308,7 +308,7 @@ public class EmailServiceImpl implements EmailService {
                       <a href="%s" target="_blank" style="background:#1a1a1a;color:#ffffff;text-decoration:none;padding:12px 28px;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-family:Arial,sans-serif;display:inline-block;border-radius:2px;font-weight:bold;">Track Your Shipment</a>
                     </div>
                     <p style="font-size:12px;color:#9a9488;text-align:center;margin:0 0 16px 0;">
-                      You can also track on <a href="https://www.dtdc.in/" target="_blank" style="color:#a08b6f;text-decoration:underline;">dtdc.in</a> or StyleNest using your AWB number.
+                      You can also track on <a href="https://www.dtdc.in/" target="_blank" style="color:#a08b6f;text-decoration:underline;">dtdc.in</a> or StyleNest Fashion using your AWB number.
                     </p>
                     """.formatted(trackingUrl);
         } else {

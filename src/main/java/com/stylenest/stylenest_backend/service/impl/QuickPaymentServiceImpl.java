@@ -60,7 +60,7 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
 
         // Sanitize and prepare address fields with sensible defaults for PayGlocal requirement
         String addressLine1 = (request.getAddressLine1() != null && !request.getAddressLine1().isBlank())
-                ? request.getAddressLine1().trim() : "StyleNest Direct Order";
+                ? request.getAddressLine1().trim() : "StyleNest Fashion Direct Order";
         String city = (request.getCity() != null && !request.getCity().isBlank())
                 ? request.getCity().trim() : "Mumbai";
         String state = (request.getState() != null && !request.getState().isBlank())

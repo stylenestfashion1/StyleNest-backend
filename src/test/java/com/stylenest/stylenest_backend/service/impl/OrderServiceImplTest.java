@@ -230,8 +230,8 @@ class OrderServiceImplTest {
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Invoice invoice = Invoice.builder().id(1L).build();
-        when(invoiceGenerationService.generateForRetailOrder(any(Order.class))).thenReturn(invoice);
-        when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
+        lenient().when(invoiceGenerationService.generateForRetailOrder(any(Order.class))).thenReturn(invoice);
+        lenient().when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
 
         orderService.placeOrder(OrderRequest.builder().paymentMethod(PaymentMethod.COD).build());
 
@@ -563,8 +563,8 @@ class OrderServiceImplTest {
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         Invoice invoice = Invoice.builder().id(1L).build();
-        when(invoiceGenerationService.generateForRetailOrder(any(Order.class))).thenReturn(invoice);
-        when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
+        lenient().when(invoiceGenerationService.generateForRetailOrder(any(Order.class))).thenReturn(invoice);
+        lenient().when(invoiceService.generatePdf(invoice)).thenReturn(new byte[] { 1, 2, 3 });
 
         OrderResponse response = orderService.placeGuestOrder(guestRequest(PaymentMethod.COD));
 
