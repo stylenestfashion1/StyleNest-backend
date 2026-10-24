@@ -216,12 +216,12 @@ public class InvoiceServiceImpl implements InvoiceService {
                 amountRow(amounts, "Total Discount", money(invoice.getTotalDiscount()), normalFont, false);
             }
             if (isExport) {
-                amountRow(amounts, "Tax (5% Included)", money(invoice.getIgstAmount()), normalFont, false);
+                amountRow(amounts, "Tax (Included)", money(invoice.getIgstAmount()), normalFont, false);
             } else if (invoice.isInterState()) {
-                amountRow(amounts, "IGST (5% Included)", money(invoice.getIgstAmount()), normalFont, false);
+                amountRow(amounts, "IGST (Included)", money(invoice.getIgstAmount()), normalFont, false);
             } else {
-                amountRow(amounts, "CGST (2.5% Incl.)", money(invoice.getCgstAmount()), normalFont, false);
-                amountRow(amounts, "SGST (2.5% Incl.)", money(invoice.getSgstAmount()), normalFont, false);
+                amountRow(amounts, "CGST (Included)", money(invoice.getCgstAmount()), normalFont, false);
+                amountRow(amounts, "SGST (Included)", money(invoice.getSgstAmount()), normalFont, false);
             }
             if (invoice.getShippingCharge() != null && invoice.getShippingCharge().signum() > 0) {
                 amountRow(amounts, "Shipping", money(invoice.getShippingCharge()), normalFont, false);
