@@ -66,6 +66,7 @@ public class InvoiceResponse {
 
     private String paymentMethod;
     private String paymentStatus;
+    private String paymentTransactionId;
     private BigDecimal amountReceived;
     private BigDecimal balanceDue;
 }

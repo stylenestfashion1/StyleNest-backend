@@ -45,6 +45,9 @@ public class InvoiceServiceImpl implements InvoiceService {
     private static final Color BRAND_PURPLE = new Color(124, 108, 214);
     private static final Color LIGHT_GREY = new Color(245, 245, 247);
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.stylenest.stylenest_backend.repository.PaymentRepository paymentRepository;
+
     @Override
     public byte[] generatePdf(Invoice invoice) {
 
@@ -147,6 +150,13 @@ public class InvoiceServiceImpl implements InvoiceService {
                     "Date: " + (invoice.getInvoiceDate() == null ? "" : invoice.getInvoiceDate().format(DATE_FORMAT)),
                     normalFont));
             details.addElement(rightPara("Order No.: " + nullToEmpty(orderReference(invoice)), normalFont));
+            if (!isBlank(invoice.getPaymentMethod())) {
+                details.addElement(rightPara("Payment: " + invoice.getPaymentMethod() + " (" + nullToEmpty(invoice.getPaymentStatus()) + ")", normalFont));
+            }
+            String txnRef = paymentTransactionReference(invoice);
+            if (!isBlank(txnRef)) {
+                details.addElement(rightPara("Gateway / Txn ID: " + txnRef, normalFont));
+            }
             header.addCell(details);
 
             header.setSpacingAfter(10);
@@ -312,6 +322,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .amountInWords(invoice.getAmountInWords())
                 .paymentMethod(invoice.getPaymentMethod())
                 .paymentStatus(invoice.getPaymentStatus())
+                .paymentTransactionId(paymentTransactionReference(invoice))
                 .amountReceived(amountReceived)
                 .balanceDue(balanceDue)
                 .build();
@@ -393,6 +404,28 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         if (invoice.getRetailOrder() != null) return invoice.getRetailOrder().getOrderNumber();
         if (invoice.getBulkOrder() != null) return invoice.getBulkOrder().getBulkOrderNumber();
+        return null;
+    }
+
+    private String paymentTransactionReference(Invoice invoice) {
+        if (invoice.getBulkOrder() != null) {
+            if (!isBlank(invoice.getBulkOrder().getPayglocalTxnId())) {
+                return invoice.getBulkOrder().getPayglocalTxnId();
+            }
+            if (!isBlank(invoice.getBulkOrder().getPayglocalGid())) {
+                return invoice.getBulkOrder().getPayglocalGid();
+            }
+        }
+        if (invoice.getRetailOrder() != null && paymentRepository != null) {
+            try {
+                return paymentRepository.findByOrder(invoice.getRetailOrder())
+                        .map(com.stylenest.stylenest_backend.entity.Payment::getProviderPaymentId)
+                        .filter(id -> !id.isBlank())
+                        .orElse(null);
+            } catch (Exception ex) {
+                // Ignore if not present
+            }
+        }
         return null;
     }
 
