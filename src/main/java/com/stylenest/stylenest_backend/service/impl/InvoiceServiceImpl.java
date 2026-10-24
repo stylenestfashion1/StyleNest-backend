@@ -157,6 +157,12 @@ public class InvoiceServiceImpl implements InvoiceService {
             if (!isBlank(txnRef)) {
                 details.addElement(rightPara("Gateway / Txn ID: " + txnRef, normalFont));
             }
+            String placeOfSupply = isExport
+                    ? (nullToEmpty(invoice.getBillingCountry()) + " (Export)")
+                    : nullToEmpty(invoice.getBillingState());
+            if (!isBlank(placeOfSupply)) {
+                details.addElement(rightPara("Place of Supply: " + placeOfSupply.trim(), normalFont));
+            }
             header.addCell(details);
 
             header.setSpacingAfter(10);
