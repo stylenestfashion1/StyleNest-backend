@@ -99,11 +99,16 @@ public class InvoiceServiceImpl implements InvoiceService {
             document.add(ruleTable());
 
             // ---- Title ----
+            boolean isExport = invoice.getBillingCountry() != null
+                    && !invoice.getBillingCountry().isBlank()
+                    && !"india".equalsIgnoreCase(invoice.getBillingCountry().trim())
+                    && !"in".equalsIgnoreCase(invoice.getBillingCountry().trim());
+
             PdfPTable titleBar = new PdfPTable(1);
             titleBar.setWidthPercentage(100);
             titleBar.setSpacingBefore(6);
             titleBar.setSpacingAfter(10);
-            PdfPCell titleCell = new PdfPCell(new Phrase("Tax Invoice", sectionFont));
+            PdfPCell titleCell = new PdfPCell(new Phrase(isExport ? "Tax Invoice / Export Commercial Invoice" : "Tax Invoice", sectionFont));
             titleCell.setBackgroundColor(BRAND_PURPLE);
             titleCell.setHorizontalAlignment(Element.ALIGN_CENTER);
             titleCell.setPadding(6);
@@ -160,7 +165,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             addHeaderCell(table, "Unit", tableHeaderFont);
             addHeaderCell(table, "Price/Unit", tableHeaderFont);
             addHeaderCell(table, "Discount", tableHeaderFont);
-            addHeaderCell(table, "GST", tableHeaderFont);
+            addHeaderCell(table, isExport ? "Tax" : "GST", tableHeaderFont);
             addHeaderCell(table, "Amount", tableHeaderFont);
 
             int sr = 1;
@@ -194,11 +199,13 @@ public class InvoiceServiceImpl implements InvoiceService {
             if (invoice.getTotalDiscount() != null && invoice.getTotalDiscount().signum() > 0) {
                 amountRow(amounts, "Total Discount", money(invoice.getTotalDiscount()), normalFont, false);
             }
-            if (invoice.isInterState()) {
-                amountRow(amounts, "IGST", money(invoice.getIgstAmount()), normalFont, false);
+            if (isExport) {
+                amountRow(amounts, "Tax (5% Included)", money(invoice.getIgstAmount()), normalFont, false);
+            } else if (invoice.isInterState()) {
+                amountRow(amounts, "IGST (5% Included)", money(invoice.getIgstAmount()), normalFont, false);
             } else {
-                amountRow(amounts, "CGST", money(invoice.getCgstAmount()), normalFont, false);
-                amountRow(amounts, "SGST", money(invoice.getSgstAmount()), normalFont, false);
+                amountRow(amounts, "CGST (2.5% Incl.)", money(invoice.getCgstAmount()), normalFont, false);
+                amountRow(amounts, "SGST (2.5% Incl.)", money(invoice.getSgstAmount()), normalFont, false);
             }
             if (invoice.getShippingCharge() != null && invoice.getShippingCharge().signum() > 0) {
                 amountRow(amounts, "Shipping", money(invoice.getShippingCharge()), normalFont, false);
@@ -333,8 +340,12 @@ public class InvoiceServiceImpl implements InvoiceService {
             BigDecimal groupTaxable = entry.getValue();
 
             if (interState) {
+                boolean isExport = invoice.getBillingCountry() != null
+                        && !invoice.getBillingCountry().isBlank()
+                        && !"india".equalsIgnoreCase(invoice.getBillingCountry().trim())
+                        && !"in".equalsIgnoreCase(invoice.getBillingCountry().trim());
                 rows.add(InvoiceTaxBreakupResponse.builder()
-                        .taxType("IGST")
+                        .taxType(isExport ? "Tax (" + rate.setScale(0, RoundingMode.HALF_UP) + "%)" : "IGST")
                         .rate(rate)
                         .taxableAmount(groupTaxable)
                         .taxAmount(taxAt(groupTaxable, rate))

@@ -163,4 +163,24 @@ class InvoiceServiceImplTest {
         assertThat(view.getInterState()).isFalse();
         assertThat(view.getTaxBreakup()).extracting("taxType").contains("CGST", "SGST");
     }
+
+    @Test
+    void buildView_exportOrder_taxBreakupShowsExportTax() {
+
+        Invoice invoice = buildInvoice(false);
+        invoice.setBillingCountry("United States");
+        invoice.setBillingState("California");
+        invoice.setIgstAmount(new BigDecimal("266.66"));
+        invoice.setCgstAmount(BigDecimal.ZERO);
+        invoice.setSgstAmount(BigDecimal.ZERO);
+
+        InvoiceResponse view = invoiceService.buildView(invoice);
+
+        assertThat(view.getInterState()).isTrue();
+        assertThat(view.getTaxBreakup()).extracting("taxType").contains("Tax (5%)");
+
+        byte[] pdf = invoiceService.generatePdf(invoice);
+        assertThat(pdf).isNotEmpty();
+        assertThat(new String(pdf, 0, 4, StandardCharsets.US_ASCII)).isEqualTo("%PDF");
+    }
 }
