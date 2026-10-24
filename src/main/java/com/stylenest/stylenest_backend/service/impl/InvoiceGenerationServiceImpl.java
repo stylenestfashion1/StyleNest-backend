@@ -350,9 +350,18 @@ public class InvoiceGenerationServiceImpl implements InvoiceGenerationService {
                     roundOff, lines.size(), taxableTotal, cgstTotal, sgstTotal, igstTotal, grandTotal);
         }
 
+        boolean isExport = invoice.getBillingCountry() != null
+                && !invoice.getBillingCountry().isBlank()
+                && !"india".equalsIgnoreCase(invoice.getBillingCountry().trim())
+                && !"in".equalsIgnoreCase(invoice.getBillingCountry().trim());
+
         invoice.setRoundOff(roundOff);
         invoice.setGrandTotal(grandTotal);
-        invoice.setAmountInWords(NumberToWordsUtil.toIndianRupeeWords(grandTotal));
+        if (isExport) {
+            invoice.setAmountInWords(NumberToWordsUtil.toUsdWords(grandTotal));
+        } else {
+            invoice.setAmountInWords(NumberToWordsUtil.toIndianRupeeWords(grandTotal));
+        }
 
         return invoice;
     }

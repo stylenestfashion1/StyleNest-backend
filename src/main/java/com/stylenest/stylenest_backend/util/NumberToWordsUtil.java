@@ -47,6 +47,35 @@ public class NumberToWordsUtil {
         return sb.toString();
     }
 
+    public static String toUsdWords(BigDecimal amount) {
+
+        if (amount == null) {
+            return "";
+        }
+
+        long dollars = amount.setScale(0, RoundingMode.DOWN).longValueExact();
+        int cents = amount.subtract(BigDecimal.valueOf(dollars))
+                .movePointRight(2)
+                .setScale(0, RoundingMode.HALF_UP)
+                .intValue();
+
+        StringBuilder sb = new StringBuilder();
+
+        if (dollars == 0) {
+            sb.append("Zero US Dollars");
+        } else {
+            sb.append(convertInternational(dollars)).append(" US Dollar").append(dollars == 1 ? "" : "s");
+        }
+
+        if (cents > 0) {
+            sb.append(" and ").append(convertInternational(cents)).append(" Cent").append(cents == 1 ? "" : "s");
+        }
+
+        sb.append(" only");
+
+        return sb.toString();
+    }
+
     private static String convert(long number) {
 
         if (number == 0) {
@@ -68,5 +97,28 @@ public class NumberToWordsUtil {
             return (convert(number / 100_000) + " Lakh " + convert(number % 100_000)).trim();
         }
         return (convert(number / 10_000_000) + " Crore " + convert(number % 10_000_000)).trim();
+    }
+
+    private static String convertInternational(long number) {
+
+        if (number == 0) {
+            return "";
+        }
+        if (number < 20) {
+            return ONES[(int) number];
+        }
+        if (number < 100) {
+            return (TENS[(int) (number / 10)] + " " + ONES[(int) (number % 10)]).trim();
+        }
+        if (number < 1000) {
+            return (ONES[(int) (number / 100)] + " Hundred " + convertInternational(number % 100)).trim();
+        }
+        if (number < 1_000_000) {
+            return (convertInternational(number / 1000) + " Thousand " + convertInternational(number % 1000)).trim();
+        }
+        if (number < 1_000_000_000) {
+            return (convertInternational(number / 1_000_000) + " Million " + convertInternational(number % 1_000_000)).trim();
+        }
+        return (convertInternational(number / 1_000_000_000) + " Billion " + convertInternational(number % 1_000_000_000)).trim();
     }
 }
