@@ -8,6 +8,6 @@ public class HomeController {
 
     @GetMapping("/")
     public String home() {
-        return "StyleNest Backend API is Live";
+        return "StyleNest Fashion Backend API is Live";
     }
 }
