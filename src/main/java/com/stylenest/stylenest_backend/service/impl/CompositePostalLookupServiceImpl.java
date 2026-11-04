@@ -58,6 +58,7 @@ public class CompositePostalLookupServiceImpl implements PostalLookupService {
             return switch (cc) {
                 case "IN" -> lookupIndia(code);
                 case "GB" -> lookupUk(code);
+                case "SG" -> lookupSingapore(code);
                 default -> lookupZippopotam(cc.toLowerCase(), code);
             };
 
@@ -244,6 +245,19 @@ public class CompositePostalLookupServiceImpl implements PostalLookupService {
         }
 
         return places.get(0);
+    }
+
+    private PostalLookupResponse lookupSingapore(String postalCode) {
+        String clean = postalCode.trim();
+        if (!clean.matches("\\d{6}")) {
+            return PostalLookupResponse.notFound();
+        }
+        return PostalLookupResponse.builder()
+                .found(true)
+                .city("Singapore")
+                .state("Singapore")
+                .country("Singapore")
+                .build();
     }
 
     private String stringOrNull(Object value) {
