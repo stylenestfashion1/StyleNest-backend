@@ -276,11 +276,11 @@ class CompositePostalLookupServiceImplTest {
 
         setUp();
 
-        PostalLookupResponse response = service.lookup("SG", "180001");
+        PostalLookupResponse response = service.lookup("SG", "529536");
 
         assertThat(response.isFound()).isTrue();
-        assertThat(response.getCity()).isEqualTo("Singapore");
-        assertThat(response.getState()).isEqualTo("Singapore");
+        assertThat(response.getCity()).isEqualTo("Tampines");
+        assertThat(response.getState()).isEqualTo("East Singapore");
         assertThat(response.getCountry()).isEqualTo("Singapore");
 
         mockServer.verify();
