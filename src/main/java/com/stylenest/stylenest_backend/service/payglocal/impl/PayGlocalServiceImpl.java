@@ -1,5 +1,6 @@
 package com.stylenest.stylenest_backend.service.payglocal.impl;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -15,12 +16,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylenest.stylenest_backend.config.PayGlocalProperties;
 import com.stylenest.stylenest_backend.dto.bulk.payment.PayGlocalInitiateResponse;
 import com.stylenest.stylenest_backend.entity.BulkOrder;
+import com.stylenest.stylenest_backend.entity.QuickPayment;
 import com.stylenest.stylenest_backend.enums.OrderStatus;
 import com.stylenest.stylenest_backend.enums.PaymentMethod;
 import com.stylenest.stylenest_backend.enums.PaymentStatus;
 import com.stylenest.stylenest_backend.exception.BadRequestException;
+import com.stylenest.stylenest_backend.exception.InvalidPaymentSignatureException;
 import com.stylenest.stylenest_backend.exception.ResourceNotFoundException;
 import com.stylenest.stylenest_backend.repository.BulkOrderRepository;
+import com.stylenest.stylenest_backend.repository.QuickPaymentRepository;
 import com.stylenest.stylenest_backend.service.EmailService;
 import com.stylenest.stylenest_backend.service.InvoiceGenerationService;
 import com.stylenest.stylenest_backend.service.InvoiceService;
@@ -44,6 +48,7 @@ public class PayGlocalServiceImpl implements PayGlocalService {
     private final InvoiceService invoiceService;
     private final EmailService emailService;
     private final RestClient restClient;
+    private final QuickPaymentRepository quickPaymentRepository;
 
     @Override
     @Transactional
@@ -160,31 +165,27 @@ public class PayGlocalServiceImpl implements PayGlocalService {
     public String handleCallback(Map<String, String> formData) {
         log.info("PayGlocal callback received: {}", formData);
 
-        String jwsToken = formData.get("x-gl-token");
-        String merchantTxnId = formData.get("merchantTxnId");
-        String status = formData.get("status");
-        String gid = formData.get("gid");
-
-        if (jwsToken != null && !jwsToken.isBlank()) {
-            boolean valid = cryptoService.verifyJwsToken(jwsToken);
-            if (!valid) {
-                log.warn("PayGlocal callback signature verification failed!");
-            }
-            Map<String, Object> claims = cryptoService.parseJwsClaims(jwsToken);
-            log.info("PayGlocal callback claims: {}", claims);
-
-            if (claims.containsKey("merchantTxnId")) {
-                merchantTxnId = (String) claims.get("merchantTxnId");
-            } else if (claims.containsKey("merchantUniqueId")) {
-                merchantTxnId = (String) claims.get("merchantUniqueId");
-            }
-            if (claims.containsKey("status")) {
-                status = (String) claims.get("status");
-            }
-            if (claims.containsKey("gid")) {
-                gid = (String) claims.get("gid");
-            }
+        String jwsToken = formData != null ? formData.get("x-gl-token") : null;
+        if (jwsToken == null || jwsToken.isBlank()) {
+            log.warn("PayGlocal callback rejected: Missing x-gl-token cryptographic signature");
+            return "https://stylenestfashion.com/bulk-orders/cart?error=missing_signature";
         }
+
+        // Verify cryptographic signature against PayGlocal public key
+        if (!cryptoService.verifyJwsToken(jwsToken)) {
+            log.error("PayGlocal callback signature verification failed!");
+            return "https://stylenestfashion.com/bulk-orders/cart?error=invalid_signature";
+        }
+
+        Map<String, Object> claims = cryptoService.parseJwsClaims(jwsToken);
+        log.info("PayGlocal callback verified claims: {}", claims);
+
+        String merchantTxnId = (String) claims.get("merchantTxnId");
+        if (merchantTxnId == null) {
+            merchantTxnId = (String) claims.get("merchantUniqueId");
+        }
+        String status = (String) claims.get("status");
+        String gid = (String) claims.get("gid");
 
         if (merchantTxnId == null) {
             return "https://stylenestfashion.com/bulk-orders/cart?error=missing_order";
@@ -194,6 +195,21 @@ public class PayGlocalServiceImpl implements PayGlocalService {
         if (order == null) {
             log.error("Order not found in PayGlocal callback: {}", merchantTxnId);
             return "https://stylenestfashion.com/bulk-orders/cart?error=order_not_found";
+        }
+
+        // Idempotency: if order is already marked PAID, return success redirect immediately
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            log.info("Bulk order {} already marked as PAID. Returning confirmation redirect.", order.getBulkOrderNumber());
+            return "https://stylenestfashion.com/bulk-orders/order-confirmation?orderNumber="
+                    + order.getBulkOrderNumber() + "&status=success";
+        }
+
+        // Verify amount and currency if present in claims
+        try {
+            validateAmountAndCurrency(claims, order.getTotalAmount(), "INR");
+        } catch (Exception e) {
+            log.error("PayGlocal callback amount/currency mismatch for order {}: {}", merchantTxnId, e.getMessage());
+            return "https://stylenestfashion.com/bulk-orders/cart?error=payment_mismatch";
         }
 
         boolean isSuccess = "SENT_FOR_CAPTURE".equalsIgnoreCase(status)
@@ -229,35 +245,172 @@ public class PayGlocalServiceImpl implements PayGlocalService {
     @Override
     @Transactional
     public void handleWebhook(String rawPayload, String jwsHeader) {
-        log.info("PayGlocal webhook received. Header: {}, Payload: {}", jwsHeader, rawPayload);
+        log.info("PayGlocal webhook received. Header present: {}, Payload present: {}",
+                jwsHeader != null && !jwsHeader.isBlank(),
+                rawPayload != null && !rawPayload.isBlank());
 
-        try {
-            String token = (jwsHeader != null && !jwsHeader.isBlank()) ? jwsHeader : rawPayload;
-            Map<String, Object> claims = cryptoService.parseJwsClaims(token);
-            if (claims.isEmpty() && rawPayload != null && rawPayload.startsWith("{")) {
-                claims = objectMapper.readValue(rawPayload, new TypeReference<Map<String, Object>>() {});
+        // 1. Identify token from x-gl-token header or compact JWS payload body
+        String token = (jwsHeader != null && !jwsHeader.isBlank()) ? jwsHeader.trim() : null;
+        if (token == null && rawPayload != null && !rawPayload.isBlank()) {
+            String trimmed = rawPayload.trim();
+            // JWS compact serialization format: BASE64URL(Header) + '.' + BASE64URL(Payload) + '.' + BASE64URL(Signature)
+            if (trimmed.split("\\.").length == 3 && !trimmed.startsWith("{")) {
+                token = trimmed;
             }
+        }
 
-            String merchantTxnId = (String) claims.get("merchantTxnId");
-            if (merchantTxnId == null) {
-                merchantTxnId = (String) claims.get("merchantUniqueId");
-            }
-            String status = (String) claims.get("status");
-            String gid = (String) claims.get("gid");
+        if (token == null) {
+            log.warn("PayGlocal webhook rejected: Missing JWS signature token");
+            throw new InvalidPaymentSignatureException("PayGlocal webhook signature verification failed: Missing signature token");
+        }
 
-            if (merchantTxnId != null) {
-                BulkOrder order = bulkOrderRepository.findByBulkOrderNumber(merchantTxnId).orElse(null);
-                if (order != null) {
-                    boolean isSuccess = "SENT_FOR_CAPTURE".equalsIgnoreCase(status)
-                            || "COMPLETED".equalsIgnoreCase(status)
-                            || "SUCCESS".equalsIgnoreCase(status);
-                    if (isSuccess && order.getPaymentStatus() != PaymentStatus.PAID) {
-                        confirmOrderPaid(order, gid);
-                    }
-                }
+        // 2. Cryptographic signature check against PayGlocal RSA public key
+        if (!cryptoService.verifyJwsToken(token)) {
+            log.error("PayGlocal webhook signature verification failed!");
+            throw new InvalidPaymentSignatureException("PayGlocal webhook signature verification failed: Invalid signature");
+        }
+
+        // 3. Parse claims from verified JWS token (never from raw unverified JSON body)
+        Map<String, Object> claims = cryptoService.parseJwsClaims(token);
+        if (claims.isEmpty()) {
+            log.warn("PayGlocal webhook rejected: Empty JWS claims");
+            throw new InvalidPaymentSignatureException("PayGlocal webhook signature verification failed: Empty claims");
+        }
+
+        String merchantTxnId = (String) claims.get("merchantTxnId");
+        if (merchantTxnId == null) {
+            merchantTxnId = (String) claims.get("merchantUniqueId");
+        }
+        if (merchantTxnId == null) {
+            throw new BadRequestException("Missing merchantTxnId in PayGlocal webhook payload");
+        }
+        final String orderTxnId = merchantTxnId;
+
+        String status = (String) claims.get("status");
+        String gid = (String) claims.get("gid");
+
+        // Handle QuickPayment if merchantTxnId starts with QP-
+        if (orderTxnId.startsWith("QP-")) {
+            processQuickPaymentWebhook(orderTxnId, status, gid, claims);
+            return;
+        }
+
+        // Handle BulkOrder
+        BulkOrder order = bulkOrderRepository.findByBulkOrderNumber(orderTxnId)
+                .orElseThrow(() -> new ResourceNotFoundException("Bulk order not found: " + orderTxnId));
+
+        // 4. Idempotency check: if order is already marked PAID, return safely without re-processing
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            log.info("Bulk order {} already marked as PAID. Webhook processed idempotently.", order.getBulkOrderNumber());
+            return;
+        }
+
+        // 5. Amount & Currency matching
+        validateAmountAndCurrency(claims, order.getTotalAmount(), "INR");
+
+        // 6. Apply payment status
+        boolean isSuccess = "SENT_FOR_CAPTURE".equalsIgnoreCase(status)
+                || "COMPLETED".equalsIgnoreCase(status)
+                || "SUCCESS".equalsIgnoreCase(status);
+
+        if (isSuccess) {
+            confirmOrderPaid(order, gid);
+        } else if ("FAILED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status)) {
+            order.setOrderStatus(OrderStatus.CANCELLED);
+            order.setPaymentStatus(PaymentStatus.FAILED);
+            restoreStockIfCancelled(order);
+            bulkOrderRepository.save(order);
+            log.info("Bulk order {} marked as FAILED/CANCELLED via PayGlocal webhook (Status: {})", order.getBulkOrderNumber(), status);
+        } else {
+            log.info("Bulk order {} received non-terminal PayGlocal status: {}", order.getBulkOrderNumber(), status);
+        }
+    }
+
+    private void processQuickPaymentWebhook(String paymentNumber, String status, String gid, Map<String, Object> claims) {
+        QuickPayment payment = quickPaymentRepository.findByPaymentNumber(paymentNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Quick payment not found: " + paymentNumber));
+
+        if (payment.getPaymentStatus() == PaymentStatus.PAID) {
+            log.info("Quick payment {} already marked as PAID. Webhook processed idempotently.", paymentNumber);
+            return;
+        }
+
+        validateAmountAndCurrency(claims, payment.getAmount(), payment.getCurrency());
+
+        boolean isSuccess = "SENT_FOR_CAPTURE".equalsIgnoreCase(status)
+                || "COMPLETED".equalsIgnoreCase(status)
+                || "SUCCESS".equalsIgnoreCase(status);
+
+        if (isSuccess) {
+            payment.setPaymentStatus(PaymentStatus.PAID);
+            if (gid != null) {
+                payment.setPayglocalGid(gid);
             }
-        } catch (Exception e) {
-            log.error("Failed to process PayGlocal webhook: {}", e.getMessage(), e);
+            quickPaymentRepository.save(payment);
+            log.info("Quick payment {} confirmed as PAID via PayGlocal webhook (GID: {})", paymentNumber, gid);
+            try {
+                emailService.sendQuickPaymentReceiptEmail(
+                        payment.getCustomerEmail(),
+                        payment.getCustomerName(),
+                        payment.getPaymentNumber(),
+                        payment.getAmount(),
+                        payment.getCurrency(),
+                        payment.getNote()
+                );
+            } catch (Exception e) {
+                log.error("Failed to send Quick Payment receipt email for {}: {}", paymentNumber, e.getMessage());
+            }
+        } else if ("FAILED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status)) {
+            payment.setPaymentStatus(PaymentStatus.FAILED);
+            quickPaymentRepository.save(payment);
+            log.info("Quick payment {} marked as FAILED via PayGlocal webhook (Status: {})", paymentNumber, status);
+        }
+    }
+
+    private void validateAmountAndCurrency(Map<String, Object> claims, BigDecimal expectedAmount, String expectedCurrency) {
+        if (expectedAmount == null) {
+            return;
+        }
+        Object paymentDataObj = claims.get("paymentData");
+        BigDecimal claimAmount = null;
+        String claimCurrency = null;
+
+        if (paymentDataObj instanceof Map<?, ?> pd) {
+            Object amt = pd.get("totalAmount");
+            if (amt == null) amt = pd.get("amount");
+            if (amt != null) {
+                try {
+                    claimAmount = new BigDecimal(amt.toString().trim());
+                } catch (Exception ignored) {}
+            }
+            Object curr = pd.get("txnCurrency");
+            if (curr == null) curr = pd.get("currency");
+            if (curr != null) {
+                claimCurrency = curr.toString().trim();
+            }
+        } else {
+            Object amt = claims.get("totalAmount");
+            if (amt == null) amt = claims.get("amount");
+            if (amt != null) {
+                try {
+                    claimAmount = new BigDecimal(amt.toString().trim());
+                } catch (Exception ignored) {}
+            }
+            Object curr = claims.get("txnCurrency");
+            if (curr == null) curr = claims.get("currency");
+            if (curr != null) {
+                claimCurrency = curr.toString().trim();
+            }
+        }
+
+        if (claimAmount != null && claimAmount.compareTo(expectedAmount) != 0) {
+            log.error("PayGlocal amount mismatch: expected {}, received in claims {}", expectedAmount, claimAmount);
+            throw new BadRequestException("Payment amount mismatch: expected " + expectedAmount + ", got " + claimAmount);
+        }
+
+        if (claimCurrency != null && expectedCurrency != null && !claimCurrency.equalsIgnoreCase(expectedCurrency)) {
+            log.error("PayGlocal currency mismatch: expected {}, received in claims {}", expectedCurrency, claimCurrency);
+            throw new BadRequestException("Payment currency mismatch: expected " + expectedCurrency + ", got " + claimCurrency);
         }
     }
 

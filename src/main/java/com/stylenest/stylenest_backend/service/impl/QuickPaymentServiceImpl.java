@@ -1,5 +1,6 @@
 package com.stylenest.stylenest_backend.service.impl;
 
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Locale;
@@ -184,31 +185,28 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
     public String handleCallback(Map<String, String> formData) {
         log.info("PayGlocal quick payment callback received: {}", formData);
 
-        String jwsToken = formData.get("x-gl-token");
-        String merchantTxnId = formData.get("merchantTxnId");
-        String status = formData.get("status");
-        String gid = formData.get("gid");
-
-        if (jwsToken != null && !jwsToken.isBlank()) {
-            boolean valid = cryptoService.verifyJwsToken(jwsToken);
-            if (!valid) {
-                log.warn("PayGlocal Quick Payment callback signature verification failed!");
-            }
-            Map<String, Object> claims = cryptoService.parseJwsClaims(jwsToken);
-            log.info("PayGlocal Quick Payment callback claims: {}", claims);
-
-            if (claims.containsKey("merchantTxnId")) {
-                merchantTxnId = (String) claims.get("merchantTxnId");
-            } else if (claims.containsKey("merchantUniqueId")) {
-                merchantTxnId = (String) claims.get("merchantUniqueId");
-            }
-            if (claims.containsKey("status")) {
-                status = (String) claims.get("status");
-            }
-            if (claims.containsKey("gid")) {
-                gid = (String) claims.get("gid");
-            }
+        String jwsToken = formData != null ? formData.get("x-gl-token") : null;
+        if (jwsToken == null || jwsToken.isBlank()) {
+            log.warn("PayGlocal Quick Payment callback rejected: Missing x-gl-token cryptographic signature");
+            return "https://stylenestfashion.com/pay?error=missing_signature";
         }
+
+        // 1. Verify cryptographic signature against PayGlocal public key
+        if (!cryptoService.verifyJwsToken(jwsToken)) {
+            log.error("PayGlocal Quick Payment callback signature verification failed!");
+            return "https://stylenestfashion.com/pay?error=invalid_signature";
+        }
+
+        // 2. Parse claims from verified JWS token
+        Map<String, Object> claims = cryptoService.parseJwsClaims(jwsToken);
+        log.info("PayGlocal Quick Payment verified callback claims: {}", claims);
+
+        String merchantTxnId = (String) claims.get("merchantTxnId");
+        if (merchantTxnId == null) {
+            merchantTxnId = (String) claims.get("merchantUniqueId");
+        }
+        String status = (String) claims.get("status");
+        String gid = (String) claims.get("gid");
 
         if (merchantTxnId == null) {
             return "https://stylenestfashion.com/pay?error=missing_payment";
@@ -218,6 +216,22 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
         if (payment == null) {
             log.error("Quick payment not found in callback: {}", merchantTxnId);
             return "https://stylenestfashion.com/pay?error=payment_not_found";
+        }
+
+        // 3. Idempotency: if already paid, return success directly
+        if (payment.getPaymentStatus() == PaymentStatus.PAID) {
+            log.info("Quick payment {} already marked as PAID. Returning success.", payment.getPaymentNumber());
+            return "https://stylenestfashion.com/pay/receipt?paymentNumber="
+                    + payment.getPaymentNumber() + "&status=success";
+        }
+
+        // 4. Amount and currency validation
+        try {
+            validateAmountAndCurrency(claims, payment.getAmount(), payment.getCurrency());
+        } catch (Exception e) {
+            log.error("Quick payment amount/currency mismatch for {}: {}", merchantTxnId, e.getMessage());
+            return "https://stylenestfashion.com/pay/receipt?paymentNumber="
+                    + payment.getPaymentNumber() + "&status=failed&error=payment_mismatch";
         }
 
         boolean isSuccess = "SENT_FOR_CAPTURE".equalsIgnoreCase(status)
@@ -244,6 +258,53 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
 
             return "https://stylenestfashion.com/pay/receipt?paymentNumber="
                     + payment.getPaymentNumber() + "&status=failed";
+        }
+    }
+
+    private void validateAmountAndCurrency(Map<String, Object> claims, BigDecimal expectedAmount, String expectedCurrency) {
+        if (expectedAmount == null) {
+            return;
+        }
+        Object paymentDataObj = claims.get("paymentData");
+        BigDecimal claimAmount = null;
+        String claimCurrency = null;
+
+        if (paymentDataObj instanceof Map<?, ?> pd) {
+            Object amt = pd.get("totalAmount");
+            if (amt == null) amt = pd.get("amount");
+            if (amt != null) {
+                try {
+                    claimAmount = new BigDecimal(amt.toString().trim());
+                } catch (Exception ignored) {}
+            }
+            Object curr = pd.get("txnCurrency");
+            if (curr == null) curr = pd.get("currency");
+            if (curr != null) {
+                claimCurrency = curr.toString().trim();
+            }
+        } else {
+            Object amt = claims.get("totalAmount");
+            if (amt == null) amt = claims.get("amount");
+            if (amt != null) {
+                try {
+                    claimAmount = new BigDecimal(amt.toString().trim());
+                } catch (Exception ignored) {}
+            }
+            Object curr = claims.get("txnCurrency");
+            if (curr == null) curr = claims.get("currency");
+            if (curr != null) {
+                claimCurrency = curr.toString().trim();
+            }
+        }
+
+        if (claimAmount != null && claimAmount.compareTo(expectedAmount) != 0) {
+            log.error("Quick payment amount mismatch: expected {}, received in claims {}", expectedAmount, claimAmount);
+            throw new BadRequestException("Payment amount mismatch: expected " + expectedAmount + ", got " + claimAmount);
+        }
+
+        if (claimCurrency != null && expectedCurrency != null && !claimCurrency.equalsIgnoreCase(expectedCurrency)) {
+            log.error("Quick payment currency mismatch: expected {}, received in claims {}", expectedCurrency, claimCurrency);
+            throw new BadRequestException("Payment currency mismatch: expected " + expectedCurrency + ", got " + claimCurrency);
         }
     }
 
