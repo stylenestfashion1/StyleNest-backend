@@ -14,4 +14,6 @@ public interface QuickPaymentService {
     QuickPaymentResponse getPaymentStatus(String paymentNumber);
 
     java.util.List<QuickPaymentResponse> getAllQuickPayments();
+
+    QuickPaymentResponse updateAddress(String paymentNumber, com.stylenest.stylenest_backend.dto.quickpay.QuickPaymentAddressUpdateRequest request);
 }
