@@ -206,6 +206,13 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     public void resendInvoiceEmail(Long id) {
 
         Order order = findOrder(id);
+
+        if (order.getPaymentStatus() != com.stylenest.stylenest_backend.enums.PaymentStatus.PAID) {
+            throw new BadRequestException(
+                    "Cannot resend invoice: order " + order.getOrderNumber()
+                            + " is not marked as paid (current status: " + order.getPaymentStatus() + ").");
+        }
+
         var invoice = invoiceGenerationService.generateForRetailOrder(order);
         byte[] pdf = invoiceService.generatePdf(invoice);
 
