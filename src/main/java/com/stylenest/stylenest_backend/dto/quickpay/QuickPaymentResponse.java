@@ -21,6 +21,7 @@ public class QuickPaymentResponse {
     private String currency;
     private String note;
     private PaymentStatus paymentStatus;
+    private String failureReason;
     private String redirectUrl;
     private String payglocalTxnId;
     private String payglocalGid;

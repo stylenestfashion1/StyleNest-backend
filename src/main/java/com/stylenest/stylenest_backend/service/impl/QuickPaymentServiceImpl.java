@@ -253,6 +253,7 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
                     + payment.getPaymentNumber() + "&status=success";
         } else {
             payment.setPaymentStatus(PaymentStatus.FAILED);
+            payment.setFailureReason(status);
             quickPaymentRepository.save(payment);
             log.warn("Quick payment {} failed/cancelled via PayGlocal (Status: {})", payment.getPaymentNumber(), status);
 
@@ -389,6 +390,7 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
                 .currency(payment.getCurrency())
                 .note(payment.getNote())
                 .paymentStatus(payment.getPaymentStatus())
+                .failureReason(payment.getFailureReason())
                 .redirectUrl(redirectUrl)
                 .payglocalTxnId(payment.getPayglocalTxnId())
                 .payglocalGid(payment.getPayglocalGid())

@@ -64,6 +64,12 @@ public class QuickPayment {
     private String payglocalGid;
     private String payglocalTxnId;
 
+    // The raw PayGlocal status (e.g. GENERAL_DECLINE, CUSTOMER_CANCELLED) when a
+    // signed callback/webhook reports non-success, or "EXPIRED" when the
+    // scheduler auto-fails a session nobody ever completed -- distinguishes an
+    // actual bank decline from a customer who simply never finished checkout.
+    private String failureReason;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

@@ -362,6 +362,7 @@ public class PayGlocalServiceImpl implements PayGlocalService {
             }
         } else if ("FAILED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status)) {
             payment.setPaymentStatus(PaymentStatus.FAILED);
+            payment.setFailureReason(status);
             quickPaymentRepository.save(payment);
             log.info("Quick payment {} marked as FAILED via PayGlocal webhook (Status: {})", paymentNumber, status);
         }
