@@ -253,6 +253,7 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
                     + payment.getPaymentNumber() + "&status=success";
         } else {
             payment.setPaymentStatus(PaymentStatus.FAILED);
+            payment.setFailureReason(status);
             quickPaymentRepository.save(payment);
             log.warn("Quick payment {} failed/cancelled via PayGlocal (Status: {})", payment.getPaymentNumber(), status);
 
@@ -325,6 +326,43 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
                 .toList();
     }
 
+    @Override
+    @Transactional
+    public QuickPaymentResponse updateAddress(String paymentNumber, com.stylenest.stylenest_backend.dto.quickpay.QuickPaymentAddressUpdateRequest request) {
+        log.info("Admin updating address for quick payment: {}", paymentNumber);
+        QuickPayment qp = quickPaymentRepository.findByPaymentNumber(paymentNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Quick payment not found: " + paymentNumber));
+
+        if (request.getCustomerName() != null && !request.getCustomerName().trim().isEmpty()) {
+            qp.setCustomerName(request.getCustomerName().trim());
+        }
+        if (request.getCustomerPhone() != null && !request.getCustomerPhone().trim().isEmpty()) {
+            qp.setCustomerPhone(request.getCustomerPhone().trim());
+        }
+        if (request.getAddressLine1() != null) {
+            qp.setAddressLine1(request.getAddressLine1().trim());
+        }
+        if (request.getAddressLine2() != null) {
+            qp.setAddressLine2(request.getAddressLine2().trim());
+        }
+        if (request.getCity() != null) {
+            qp.setCity(request.getCity().trim());
+        }
+        if (request.getState() != null) {
+            qp.setState(request.getState().trim());
+        }
+        if (request.getPostalCode() != null) {
+            qp.setPostalCode(request.getPostalCode().trim());
+        }
+        if (request.getCountry() != null) {
+            qp.setCountry(request.getCountry().trim());
+        }
+
+        QuickPayment saved = quickPaymentRepository.save(qp);
+        log.info("Successfully updated address for quick payment: {}", paymentNumber);
+        return mapToResponse(saved, null);
+    }
+
     private void sendReceiptEmail(QuickPayment payment) {
         try {
             emailService.sendQuickPaymentReceiptEmail(
@@ -352,10 +390,12 @@ public class QuickPaymentServiceImpl implements QuickPaymentService {
                 .currency(payment.getCurrency())
                 .note(payment.getNote())
                 .paymentStatus(payment.getPaymentStatus())
+                .failureReason(payment.getFailureReason())
                 .redirectUrl(redirectUrl)
                 .payglocalTxnId(payment.getPayglocalTxnId())
                 .payglocalGid(payment.getPayglocalGid())
                 .addressLine1(payment.getAddressLine1())
+                .addressLine2(payment.getAddressLine2())
                 .city(payment.getCity())
                 .state(payment.getState())
                 .country(payment.getCountry())

@@ -274,6 +274,13 @@ public class BulkOrderServiceImpl implements BulkOrderService {
     public void resendInvoiceEmail(Long id) {
 
         BulkOrder order = findById(id);
+
+        if (order.getPaymentStatus() != PaymentStatus.PAID) {
+            throw new BadRequestException(
+                    "Cannot resend invoice: order " + order.getBulkOrderNumber()
+                            + " is not marked as paid (current status: " + order.getPaymentStatus() + ").");
+        }
+
         var invoice = invoiceGenerationService.generateForBulkOrder(order);
         byte[] pdf = invoiceService.generatePdf(invoice);
 

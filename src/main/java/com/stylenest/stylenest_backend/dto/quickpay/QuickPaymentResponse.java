@@ -21,10 +21,12 @@ public class QuickPaymentResponse {
     private String currency;
     private String note;
     private PaymentStatus paymentStatus;
+    private String failureReason;
     private String redirectUrl;
     private String payglocalTxnId;
     private String payglocalGid;
     private String addressLine1;
+    private String addressLine2;
     private String city;
     private String state;
     private String country;

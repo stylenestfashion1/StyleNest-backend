@@ -104,6 +104,7 @@ public class AbandonedOrderExpiryScheduler {
         for (QuickPayment qp : staleQuickPayments) {
             try {
                 qp.setPaymentStatus(PaymentStatus.FAILED);
+                qp.setFailureReason("EXPIRED");
                 quickPaymentRepository.save(qp);
                 log.info("Auto-expired abandoned quick payment {} (created: {})",
                         qp.getPaymentNumber(), qp.getCreatedAt());
